@@ -52,6 +52,25 @@ npm test             # unit tests
 npm run test:e2e     # real Electron window with stand-in models
 npm run test:live    # real Claude + Codex (uses a little quota); add "-- gemini" for Gemini
 npm run dist:win     # installer + portable exe in release\
+node tests/smoke/packaged-smoke.mjs   # packaged app + real Claude/Codex, throwaway data folder
 ```
+
+## Verified on 2026-11-18
+
+- Lint clean; 14 unit tests; 8 Electron end-to-end tests (both models receive the question, independent answers in their own tabs, exactly one review per model and one final call, copy menus, Ctrl+C/Ctrl+V, links opening externally, hostile HTML rendered inert, Stop, rate-limited model + Retry, avatar failure falling back to the Windows voice, settings/instructions/history surviving a restart, history off).
+- Live: 15/15 checks with the real Claude Code, Codex and Gemini sign-ins (Compare 14 s, Review together 57 s with three models, real process cancellation).
+- Packaged app (`release\win-unpacked`) answered a real Review-together question with Claude and Codex: 7/7 checks.
+- The original Jarvis kept running throughout (all four agents detected, avatar ready); none of its files or the jarvis-agent-bridge were changed.
+
+## Known limitations
+
+- **JARVIS avatar speech was not played live in testing.** The route is the one the bridge verified earlier, and failure handling was tested, but speaking through the avatar needs a live avatar conversation (Command → Avatar) and uses Jarvis Cloud avatar minutes. Jarvis accepting text does not prove sound played, and **Stop speaking** cannot interrupt the avatar once it has the text.
+- **Hermes** is installed but not signed in (`hermes model`), so its adapter is untested and off by default. Its `--safe-mode` disables plugins and MCP, but Hermes has no verified "no tools" switch.
+- **Gemini (Antigravity)** has no switch that removes all tools; it runs in plan mode, sandboxed, without auto-approval, in an empty folder. It is off by default.
+- **Ollama** is not installed and **LM Studio**'s server is not running, so local models show as unavailable; the adapter (OpenAI-compatible HTTP) was unit-checked, not run against a real server.
+- Links are never verified by the models. **Check link** confirms only that a page responds.
+- Answers are not streamed word by word; each model's answer appears when it is complete.
+- The installer is **not code-signed**, so SmartScreen will warn. Installing was not run on this PC, to avoid adding shortcuts that might clash with the other "ron-assistant" build in progress.
+- Context sent to models is limited to the last three questions and answers of a conversation.
 
 See [docs/feature-map.md](docs/feature-map.md) for the Jarvis inspection and reuse decisions.

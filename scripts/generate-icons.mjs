@@ -26,7 +26,7 @@ function png(size) {
       if (d <= r) {
         const hl = Math.hypot(x - cx * 0.7, y - cy * 0.7) / (r * 1.6);
         const t = Math.min(1, hl);
-        R = Math.round(156 * (1 - t) + 18 * t); G = Math.round(195 * (1 - t) + 48 * t); B = Math.round(255 * (1 - t) + 140 * t); A = 255;
+        R = Math.round(156 * (1 - t) + 18 * t); G = Math.round(195 * (1 - t) + 48 * t); B = Math.round(255 * (1 - t) + 140 * t);
         if (d > r - Math.max(1, size * 0.045)) { R = 230; G = 238; B = 255; }
         A = Math.round(255 * Math.min(1, r - d + 0.5));
       }
