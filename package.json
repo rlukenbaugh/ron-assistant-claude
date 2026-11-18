@@ -1,0 +1,84 @@
+{
+  "name": "ron-assistant-claude",
+  "productName": "Ron Assistant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ask Claude, Codex and other configured models at once, compare or let them review each other, and hear the final answer.",
+  "main": "src/main/main.js",
+  "type": "commonjs",
+  "author": "Ron Lukenbaugh",
+  "license": "MIT",
+  "homepage": "https://github.com/rlukenbaugh/ron-assistant-claude",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rlukenbaugh/ron-assistant-claude.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "lint": "eslint .",
+    "test": "node --test tests/unit/",
+    "test:e2e": "playwright test",
+    "test:live": "node tests/live/live-agents.mjs",
+    "check": "npm run lint && npm test && npm run test:e2e",
+    "generate:icons": "node scripts/generate-icons.mjs",
+    "dist:win": "npm run generate:icons && electron-builder --win nsis portable",
+    "publish:win": "npm run generate:icons && electron-builder --win nsis portable --publish always",
+    "release:notes": "node scripts/render-release-notes.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "markdown-it": "^14.3.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.1",
+    "electron": "^45.3.4",
+    "electron-builder": "^26.18.0",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0"
+  },
+  "allowScripts": {
+    "electron-winstaller": false
+  },
+  "build": {
+    "appId": "com.rlukenbaugh.ronassistant.claude",
+    "productName": "Ron Assistant",
+    "directories": {
+      "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "rlukenbaugh",
+      "repo": "ron-assistant-claude",
+      "releaseType": "release"
+    },
+    "files": [
+      "src/**/*",
+      "build/icons/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "win": {
+      "icon": "build/icons/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Ron Assistant",
+      "artifactName": "Ron-Assistant-Setup-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Ron-Assistant-Portable-${version}-${arch}.${ext}"
+    }
+  }
+}

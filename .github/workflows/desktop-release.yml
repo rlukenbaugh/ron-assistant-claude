@@ -1,0 +1,99 @@
+name: Desktop Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Detect signing configuration
+        id: signing
+        shell: pwsh
+        run: |
+          if (-not $env:CSC_LINK -or -not $env:CSC_KEY_PASSWORD) {
+            "enabled=false" >> $env:GITHUB_OUTPUT
+            Write-Warning "CSC_LINK / CSC_KEY_PASSWORD are not configured. The release will be built unsigned."
+            exit 0
+          }
+          "enabled=true" >> $env:GITHUB_OUTPUT
+          Write-Host "Code signing secrets detected. The release will be signed."
+
+      - name: Validate tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} does not match package.json version $version." }
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      - name: Build desktop release and publish assets
+        run: npm run publish:win
+
+      - name: Note unsigned release fallback
+        if: steps.signing.outputs.enabled != 'true'
+        shell: pwsh
+        run: Write-Host "Release assets were built without Windows code signing because CSC_LINK / CSC_KEY_PASSWORD are not configured."
+
+      - name: Generate release notes
+        shell: pwsh
+        run: node scripts/render-release-notes.mjs --out release-notes.md
+
+      - name: Ensure portable asset is attached
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          gh release upload "v$version" "release/Ron-Assistant-Portable-$version-x64.exe" --repo $env:GITHUB_REPOSITORY --clobber
+
+      - name: Apply polished release notes
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          gh release edit "v$version" --repo $env:GITHUB_REPOSITORY --title "Ron Assistant v$version" --notes-file release-notes.md
+
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts-release
+          path: test-results
+          if-no-files-found: ignore

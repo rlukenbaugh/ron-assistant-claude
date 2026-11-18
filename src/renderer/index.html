@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ron Assistant</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#question">Skip to question box</a>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>Ron Assistant</span></div>
+    <div class="mode-switch" role="radiogroup" aria-label="Answer mode">
+      <button type="button" role="radio" data-mode="compare" aria-checked="false" title="Each model answers on its own">Compare</button>
+      <button type="button" role="radio" data-mode="review" aria-checked="true" title="Models answer, review each other, then one writes the final answer">Review together</button>
+    </div>
+    <div id="model-chips" class="model-chips" aria-label="Models to ask"></div>
+    <div class="top-actions">
+      <div class="voice-controls" aria-label="Voice">
+        <button type="button" id="btn-mute" class="icon-btn" aria-pressed="false" title="Mute spoken answers">🔊</button>
+        <button type="button" id="btn-stop-speech" class="icon-btn" title="Stop speaking" disabled>⏹</button>
+        <button type="button" id="btn-replay" class="icon-btn" title="Replay the last final answer" disabled>↻</button>
+      </div>
+      <div class="text-size" aria-label="Text size">
+        <button type="button" id="btn-smaller" class="icon-btn" title="Smaller text (Ctrl -)">A−</button>
+        <button type="button" id="btn-larger" class="icon-btn" title="Larger text (Ctrl +)">A+</button>
+      </div>
+      <button type="button" id="btn-theme" class="icon-btn" title="Switch light / dark">◐</button>
+      <button type="button" id="btn-settings" class="btn">Settings</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Conversations">
+      <button type="button" id="btn-new" class="btn btn-primary btn-block">+ New conversation</button>
+      <div id="history-note" class="muted small"></div>
+      <ul id="history-list" class="history-list"></ul>
+    </aside>
+
+    <main class="main">
+      <div id="thread" class="thread" aria-live="polite">
+        <section id="welcome" class="welcome">
+          <h1>Ask once. Hear from every model.</h1>
+          <p>Type a question below. In <strong>Review together</strong>, the models you turn on answer separately, check one another’s answers, and one writes a final answer. In <strong>Compare</strong>, you see each answer side by side.</p>
+          <p class="muted small">Answers are printed here first. Only the final answer is spoken, unless you ask for another.</p>
+        </section>
+      </div>
+
+      <form id="composer" class="composer" autocomplete="off">
+        <label for="question" class="sr-only">Your question</label>
+        <textarea id="question" rows="3" placeholder="Ask a question, or paste text to discuss…" spellcheck="true"></textarea>
+        <div class="composer-bar">
+          <span id="composer-hint" class="muted small">Ctrl+Enter to ask</span>
+          <div class="composer-actions">
+            <button type="button" id="btn-stop" class="btn btn-danger" hidden>Stop</button>
+            <button type="submit" id="btn-ask" class="btn btn-primary">Ask</button>
+          </div>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <dialog id="settings" class="settings" aria-labelledby="settings-title">
+    <form method="dialog" class="settings-inner">
+      <header class="settings-head">
+        <h2 id="settings-title">Settings</h2>
+        <button type="submit" class="icon-btn" aria-label="Close settings">✕</button>
+      </header>
+      <nav class="settings-tabs" role="tablist">
+        <button type="button" role="tab" data-tab="instructions" aria-selected="true">My instructions</button>
+        <button type="button" role="tab" data-tab="models" aria-selected="false">Models &amp; connections</button>
+        <button type="button" role="tab" data-tab="voice" aria-selected="false">Voice</button>
+        <button type="button" role="tab" data-tab="privacy" aria-selected="false">History &amp; privacy</button>
+        <button type="button" role="tab" data-tab="appearance" aria-selected="false">Appearance</button>
+      </nav>
+
+      <section class="settings-panel" data-panel="instructions">
+        <h3>My saved instructions and preferences</h3>
+        <p class="muted">Sent with every question to each model you turn on. Kept separately from conversation history and never deleted by clearing history.</p>
+        <textarea id="instructions" rows="12" placeholder="For example: Use plain English. Lead with the answer. I use Windows 11."></textarea>
+        <div class="row"><button type="button" id="btn-save-instructions" class="btn btn-primary">Save instructions</button><span id="instructions-saved" class="muted small"></span></div>
+      </section>
+
+      <section class="settings-panel" data-panel="models" hidden>
+        <h3>Models and connections</h3>
+        <p class="muted">Uses the sign-ins already saved on this computer. A ChatGPT or Claude subscription does not include API access, so this app does not use API keys.</p>
+        <div id="connection-list" class="connection-list"></div>
+        <div class="row"><button type="button" id="btn-recheck" class="btn">Check connections again</button></div>
+        <h3>Review together</h3>
+        <label class="field">Final answer written by
+          <select id="final-model"></select>
+        </label>
+        <label class="field">Review rounds
+          <select id="review-rounds"><option value="1">1 round (faster)</option><option value="2">2 rounds (more thorough)</option></select>
+        </label>
+        <label class="field">Time limit for each model
+          <select id="timeout"><option value="90">90 seconds</option><option value="180">3 minutes</option><option value="300">5 minutes</option></select>
+        </label>
+      </section>
+
+      <section class="settings-panel" data-panel="voice" hidden>
+        <h3>Voice</h3>
+        <fieldset class="field">
+          <legend>Speak final answers with</legend>
+          <label><input type="radio" name="speech-output" value="windows"> Windows voice (works offline)</label>
+          <label><input type="radio" name="speech-output" value="jarvis"> JARVIS avatar, when a Jarvis avatar conversation is live (falls back to Windows voice)</label>
+          <label><input type="radio" name="speech-output" value="off"> Don’t speak</label>
+        </fieldset>
+        <label class="check"><input type="checkbox" id="auto-speak"> Speak the final answer automatically when it is ready</label>
+        <label class="field">Windows voice <select id="voice-select"></select></label>
+        <label class="field">Speaking speed <input type="range" id="voice-rate" min="0.7" max="1.5" step="0.05"></label>
+        <div class="row"><button type="button" id="btn-voice-test" class="btn">Test voice</button><button type="button" id="btn-jarvis-status" class="btn">Check Jarvis avatar</button></div>
+        <p id="jarvis-status" class="muted small"></p>
+        <p class="muted small">The Jarvis avatar reads answers through your existing Jarvis app. Its access key stays in Jarvis’s own folder and is never sent to a model. Jarvis accepting the text does not prove sound reached your speakers. The avatar uses your Jarvis Cloud avatar minutes.</p>
+      </section>
+
+      <section class="settings-panel" data-panel="privacy" hidden>
+        <h3>Conversation history</h3>
+        <label class="check"><input type="checkbox" id="keep-history"> Keep conversations on this computer</label>
+        <p class="muted small">When off, conversations are forgotten when you close the app, and nothing new is saved. Your saved instructions are not affected.</p>
+        <div class="row"><button type="button" id="btn-clear-history" class="btn btn-danger">Delete all saved conversations…</button><button type="button" id="btn-data-folder" class="btn">Open data folder</button></div>
+        <h3>What is sent to each model</h3>
+        <div id="privacy-table"></div>
+      </section>
+
+      <section class="settings-panel" data-panel="appearance" hidden>
+        <h3>Appearance</h3>
+        <label class="field">Theme <select id="theme-select"><option value="system">Match Windows</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+        <label class="field">Text size <input type="range" id="font-size" min="14" max="28" step="1"> <span id="font-size-label"></span></label>
+        <label class="field">Reading width <select id="reading-width"><option value="narrow">Narrow</option><option value="comfortable">Comfortable</option><option value="wide">Wide</option></select></label>
+      </section>
+    </form>
+  </dialog>
+
+  <dialog id="confirm" class="confirm">
+    <form method="dialog">
+      <p id="confirm-text"></p>
+      <div class="row end"><button value="cancel" class="btn">Cancel</button><button value="ok" class="btn btn-danger">Delete</button></div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

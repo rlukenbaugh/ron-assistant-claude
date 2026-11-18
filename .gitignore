@@ -1,0 +1,13 @@
+node_modules/
+dist/
+release/
+build/icons/
+test-results/
+playwright-report/
+work/
+*.log
+.env
+.env.*
+*.pfx
+*.p12
+release-notes.md
