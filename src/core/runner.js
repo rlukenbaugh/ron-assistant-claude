@@ -11,7 +11,7 @@ function killTree(child) {
 }
 
 /** Ask a CLI agent. Resolves with answer text; rejects with AdapterError(code: failed|rate-limited|signin|timeout|cancelled). */
-function runCli(id, prompt, { signal, timeoutSec = 180, model = '', cwd } = {}) {
+function runCli(id, prompt, { signal, timeoutSec = 180, model = '', cwd, onText } = {}) {
   const provider = getProvider(id);
   checkedPrompt(prompt);
   if (!installedPath(id)) return Promise.reject(new AdapterError('missing', `${provider.name} is not installed on this computer.`));
@@ -25,7 +25,23 @@ function runCli(id, prompt, { signal, timeoutSec = 180, model = '', cwd } = {}) 
     const timer = setTimeout(() => finish('timeout', `${provider.name} did not answer within ${timeoutSec} seconds.`), timeoutSec * 1000);
     const onAbort = () => finish('cancelled', 'Stopped.');
     signal?.addEventListener('abort', onAbort, { once: true });
-    child.stdout.on('data', (d) => { out += d; if (out.length > 4_000_000) finish('failed', `${provider.name} produced too much output.`); });
+    // Providers that stream (Claude) report the answer so far after each complete line.
+    let pending = ''; let partial = '';
+    const streamLine = (line) => {
+      if (!line.startsWith('{')) return;
+      let event; try { event = JSON.parse(line); } catch { return; }
+      const delta = provider.streamDelta(event);
+      if (delta) { partial += delta; onText(partial); }
+    };
+    child.stdout.on('data', (d) => {
+      out += d;
+      if (out.length > 4_000_000) { finish('failed', `${provider.name} produced too much output.`); return; }
+      if (!onText || !provider.streamDelta) return;
+      pending += d;
+      const lines = pending.split(/\r?\n/);
+      pending = lines.pop();
+      try { lines.forEach((l) => streamLine(l.trim())); } catch { /* a display problem must not stop the answer */ }
+    });
     child.stderr.on('data', (d) => { err = (err + d).slice(-20000); });
     child.stdin.on('error', () => {});
     child.on('error', (e) => { clearTimeout(timer); signal?.removeEventListener('abort', onAbort); reject(new AdapterError('missing', `${provider.name} could not start: ${e.message}`)); });
@@ -52,7 +68,7 @@ function summarizeError(name, text, exitCode) {
 }
 
 /** Ask a local OpenAI-compatible server (LM Studio / Ollama). */
-async function runHttp(id, prompt, { signal, timeoutSec = 180, model = '', fetchImpl = fetch } = {}) {
+async function runHttp(id, prompt, { signal, timeoutSec = 180, model = '', fetchImpl = fetch, onText } = {}) {
   const provider = getProvider(id);
   checkedPrompt(prompt);
   const timeout = AbortSignal.timeout(timeoutSec * 1000);
@@ -60,11 +76,14 @@ async function runHttp(id, prompt, { signal, timeoutSec = 180, model = '', fetch
   try {
     const chosen = model || (await listLocalModels(provider, fetchImpl))[0];
     if (!chosen) throw new AdapterError('missing', `${provider.name} has no model loaded.`);
+    const stream = Boolean(onText);
     const r = await fetchImpl(`${provider.baseUrl}/chat/completions`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, signal: combined,
-      body: JSON.stringify({ model: chosen, messages: [{ role: 'user', content: prompt }], stream: false }),
+      body: JSON.stringify({ model: chosen, messages: [{ role: 'user', content: prompt }], stream }),
     });
     if (!r.ok) throw new AdapterError(r.status === 429 ? 'rate-limited' : 'failed', `${provider.name} returned HTTP ${r.status}.`);
+    // A server that ignores "stream" answers with plain JSON; handle both.
+    if (stream && r.body && /text\/event-stream/i.test(r.headers?.get?.('content-type') || '')) return checkedAnswer(await readEventStream(r.body, onText));
     const body = await r.json();
     return checkedAnswer(body.choices?.[0]?.message?.content);
   } catch (e) {
@@ -73,6 +92,27 @@ async function runHttp(id, prompt, { signal, timeoutSec = 180, model = '', fetch
     if (e instanceof AdapterError) throw e;
     throw new AdapterError('missing', `${provider.name} is not running.`);
   }
+}
+
+/** Read an OpenAI-style server-sent event stream ("data: {...}" lines, ending with "data: [DONE]"). */
+async function readEventStream(body, onText) {
+  const decoder = new TextDecoder();
+  let pending = ''; let text = '';
+  const handle = (line) => {
+    const m = line.match(/^data:\s?(.*)$/);
+    if (!m || m[1] === '[DONE]') return;
+    let event; try { event = JSON.parse(m[1]); } catch { return; }
+    const delta = event.choices?.[0]?.delta?.content;
+    if (typeof delta === 'string' && delta) { text += delta; onText(text); }
+  };
+  for await (const chunk of body) {
+    pending += decoder.decode(chunk, { stream: true });
+    const lines = pending.split(/\r?\n/);
+    pending = lines.pop();
+    lines.forEach((l) => handle(l.trim()));
+  }
+  handle(pending.trim());
+  return text;
 }
 
 async function listLocalModels(provider, fetchImpl = fetch) {
@@ -122,4 +162,4 @@ async function checkAll(opts) {
   return Object.fromEntries(entries);
 }
 
-module.exports = { ask, runCli, runHttp, checkConnection, checkAll, killTree, summarizeError };
+module.exports = { ask, runCli, runHttp, readEventStream, checkConnection, checkAll, killTree, summarizeError };

@@ -37,6 +37,11 @@ contextBridge.exposeInMainWorld('ron', {
     ipcRenderer.on('update:status', handler);
     return () => ipcRenderer.removeListener('update:status', handler);
   },
+  onPartial: (fn) => {
+    const handler = (_e, partial) => fn(partial);
+    ipcRenderer.on('run:partial', handler);
+    return () => ipcRenderer.removeListener('run:partial', handler);
+  },
   onRun: (fn) => {
     const handler = (_e, run) => fn(run);
     ipcRenderer.on('run:update', handler);

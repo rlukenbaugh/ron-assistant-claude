@@ -20,7 +20,7 @@ function h(tag, attrs = {}, ...children) {
 
 const state = {
   settings: null, instructions: '', providers: [], connections: {}, conversationId: null,
-  runs: new Map(), ui: new Map(), md: new Map(), busy: false, spoken: new Set(), lastFinal: '', fake: false,
+  runs: new Map(), partials: new Map(), ui: new Map(), md: new Map(), busy: false, spoken: new Set(), lastFinal: '', fake: false,
 };
 const nameOf = (id) => state.providers.find((p) => p.id === id)?.name || id;
 const STATE_LABEL = { queued: 'Waiting', running: 'Thinking…', done: 'Answered', failed: 'Failed', stopped: 'Stopped', 'rate-limited': 'Rate-limited' };
@@ -167,7 +167,12 @@ function progressNode(run) {
   });
   if (run.mode === 'review') {
     const rv = run.reviews || [];
-    if (rv.length) items.push(badge(`Review: ${rv.filter((r) => r.state === 'done').length}/${rv.length}`, rv.some((r) => r.state === 'running') ? 'running' : 'done'));
+    if (rv.length) {
+      const round = Math.max(...rv.map((r) => r.round));
+      const inRound = rv.filter((r) => r.round === round);
+      const total = run.reviewRounds || round;
+      items.push(badge(`Review${total > 1 ? ` round ${round} of ${total}` : ''}: ${inRound.filter((r) => r.state === 'done').length} of ${inRound.length} done`, inRound.some((r) => r.state === 'running' || r.state === 'queued') ? 'running' : 'done'));
+    }
     if (run.final) items.push(badge(`Final answer: ${STATE_LABEL[run.final.state] || run.final.state}`, run.final.state));
   }
   if (run.status === 'stopped') items.push(badge('Stopped by you', 'stopped'));
@@ -178,9 +183,19 @@ function retryButton(run, id) {
   return h('button', { type: 'button', class: 'btn btn-small', text: `Retry ${nameOf(id)}`, disabled: state.busy, onclick: () => retryModel(run, id) });
 }
 
+/**
+ * A box that shows a model's text as it is written. Plain text only (the finished answer is
+ * rendered as Markdown); aria-busy keeps screen readers from reading every new word.
+ */
+function streamBox(run, key) {
+  const k = `${run.id}|${key}`;
+  const text = state.partials.get(k) || '';
+  return h('div', { class: 'answer streaming', 'data-stream': k, 'aria-busy': 'true', hidden: !text, text });
+}
+
 function modelBody(run, id) {
   const a = run.answers[id];
-  if (!a || a.state === 'queued' || a.state === 'running') return h('p', { class: 'muted' }, badge(`${nameOf(id)} is ${a?.state === 'running' ? 'thinking' : 'waiting'}…`, a?.state || 'queued'));
+  if (!a || a.state === 'queued' || a.state === 'running') return h('div', {}, h('p', { class: 'muted' }, badge(`${nameOf(id)} is ${a?.state === 'running' ? 'answering' : 'waiting'}…`, a?.state || 'queued')), streamBox(run, `answer:${id}`));
   if (a.state !== 'done') {
     const why = a.code === 'rate-limited' ? 'hit a usage or rate limit' : a.code === 'signin' ? 'needs signing in' : a.code === 'timeout' ? 'ran out of time' : a.code === 'cancelled' ? 'was stopped' : 'could not answer';
     const hint = a.code === 'failed' && state.connections[id]?.warning ? h('p', { class: 'small muted', text: state.connections[id].warning }) : null;
@@ -236,7 +251,7 @@ function finalPanel(run) {
   let body;
   if (!f || f.state === 'queued' || f.state === 'running') {
     const phase = run.phase === 'review' ? 'The models are reviewing each other’s answers…' : f?.state === 'running' ? `${nameOf(f.by)} is writing the final answer…` : 'Waiting for the models to answer…';
-    body = run.status === 'running' ? h('p', { class: 'muted' }, badge(phase, 'running')) : h('p', { class: 'muted', text: 'No final answer was produced.' });
+    body = run.status === 'running' ? h('div', {}, h('p', { class: 'muted' }, badge(phase, 'running')), f?.state === 'running' && f.by ? streamBox(run, `final:${f.by}`) : null) : h('p', { class: 'muted', text: 'No final answer was produced.' });
   } else if (f.state === 'failed') {
     body = h('div', { class: 'error-box', role: 'alert', text: f.error || 'No final answer could be produced.' });
   } else {
@@ -262,7 +277,7 @@ function discussionPanel(run) {
     reviews.map((r) => h('div', { class: 'turn' },
       h('h4', { text: `Round ${r.round} · ${r.name} reviewed the other answers` }),
       r.state === 'done' ? [answerNode(r.review || r.text), r.revised ? h('details', {}, h('summary', { text: `${r.name}'s revised answer` }), answerNode(r.revised)) : null]
-        : r.state === 'running' || r.state === 'queued' ? badge('Reviewing…', 'running') : h('div', { class: 'error-box', text: r.error || 'This review did not finish.' }))));
+        : r.state === 'running' || r.state === 'queued' ? [badge('Reviewing…', 'running'), streamBox(run, `review:${r.id}:${r.round}`)] : h('div', { class: 'error-box', text: r.error || 'This review did not finish.' }))));
   return det;
 }
 
@@ -298,8 +313,17 @@ async function renderRun(run) {
   if (fresh) el.scrollIntoView({ block: 'start' });
 }
 
+/** Partial text from a model that is still writing: update just that box, no full redraw. */
+function onPartial({ runId, key, text }) {
+  const k = `${runId}|${key}`;
+  state.partials.set(k, text);
+  const el = document.querySelector(`[data-stream="${CSS.escape(k)}"]`);
+  if (el) { el.textContent = text; el.hidden = false; }
+}
+
 function onRunUpdate(run) {
   state.runs.set(run.id, run);
+  if (run.status !== 'running') for (const k of state.partials.keys()) if (k.startsWith(`${run.id}|`)) state.partials.delete(k);
   if (run.conversationId && !state.conversationId) state.conversationId = run.conversationId;
   if (run.conversationId !== state.conversationId) return;
   renderRun(run);
@@ -482,11 +506,17 @@ async function resetPath(id) {
   toast(`${nameOf(id)} will be found automatically`);
 }
 
+
+function contextText() {
+  const n = state.settings.contextTurns;
+  return n === 0 ? 'no earlier questions (each question stands alone)' : `the last ${n === 1 ? 'earlier question and its final answer' : `${n} earlier questions and final answers`} from the same conversation`;
+}
+
 function renderPrivacy() {
   const rows = state.providers.map((p) => h('tr', {}, h('td', { text: p.name }), h('td', { text: p.destination }),
     h('td', { text: state.settings.enabled[p.id] && usable(p.id) ? 'On' : 'Off' })));
   $('#privacy-table').replaceChildren(
-    h('p', { class: 'small', text: 'When a model is on, it receives: your question; your saved instructions; up to three earlier questions and final answers from the same conversation; and, in Review together, the other models’ answers and reviews. Nothing else from your computer is attached. Models are asked not to use tools, files or the web, and Claude and Codex run with tools disabled.' }),
+    h('p', { class: 'small', text: `When a model is on, it receives: your question; your saved instructions; ${contextText()}; and, in Review together, the other models’ answers and reviews. Nothing else from your computer is attached. Models are asked not to use tools, files or the web, and Claude and Codex run with tools disabled.` }),
     h('table', { class: 'privacy-table' }, h('thead', {}, h('tr', {}, h('th', { text: 'Model' }), h('th', { text: 'Where it is processed' }), h('th', { text: 'Currently' }))), h('tbody', {}, rows)),
     h('p', { class: 'small muted', text: 'Speech: the Windows voice runs on this computer. The JARVIS avatar option sends only the final answer to your Jarvis app, which passes it to its avatar service. Update checks (if on) contact github.com only to look for a newer version of this app.' }));
 }
@@ -511,6 +541,7 @@ function openSettings(tab = 'instructions') {
   $('#font-size').value = s.fontSize; $('#font-size-label').textContent = `${s.fontSize}px`;
   $('#reading-width').value = s.readingWidth;
   $('#review-rounds').value = String(s.reviewRounds);
+  $('#context-turns').value = String([0, 1, 3, 5, 10].includes(s.contextTurns) ? s.contextTurns : 3);
   $('#timeout').value = String([90, 180, 300].includes(s.timeoutSec) ? s.timeoutSec : 180);
   renderConnections(); renderPrivacy(); loadVoices(); showTab(tab);
   $('#settings').showModal();
@@ -545,6 +576,7 @@ function wireSettings() {
   $('#reading-width').addEventListener('change', (e) => saveSettings({ readingWidth: e.target.value }));
   $('#final-model').addEventListener('change', (e) => saveSettings({ finalModel: e.target.value }));
   $('#review-rounds').addEventListener('change', (e) => saveSettings({ reviewRounds: Number(e.target.value) }));
+  $('#context-turns').addEventListener('change', (e) => { saveSettings({ contextTurns: Number(e.target.value) }).then(renderPrivacy); });
   $('#timeout').addEventListener('change', (e) => saveSettings({ timeoutSec: Number(e.target.value) }));
   $('#btn-recheck').addEventListener('click', async () => { state.connections = {}; renderConnections(); await refreshConnections(); toast('Connections checked'); });
 }
@@ -623,6 +655,7 @@ async function init() {
   Object.assign(state, { settings: data.settings, instructions: data.instructions.text, providers: data.providers, fake: data.fake });
   applyAppearance(); renderChips(); wire(); refreshHistory();
   ron.onRun(onRunUpdate);
+  ron.onPartial(onPartial);
   ron.onRun((run) => { if (run.status === 'running') setBusy(true); });
   refreshConnections();
   document.body.dataset.ready = '1';

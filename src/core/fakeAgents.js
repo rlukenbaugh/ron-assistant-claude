@@ -7,15 +7,24 @@ const { AdapterError } = require('./adapters');
 
 function createFakeAsk({ logFile } = {}) {
   const attempts = {};
-  return function fakeAsk(id, prompt, { signal } = {}) {
+  return function fakeAsk(id, prompt, { signal, onText } = {}) {
     if (logFile) fs.appendFileSync(logFile, `${JSON.stringify({ id, prompt })}\n`);
-    const question = (prompt.match(/RON'S QUESTION:\n([\s\S]*?)(\n\n[A-Z ]{6,}|$)/) || [])[1] || '';
+    const question = (prompt.match(/THE USER'S QUESTION:\n([\s\S]*?)(\n\n[A-Z ]{6,}|$)/) || [])[1] || '';
     attempts[id] = (attempts[id] || 0) + 1;
     const isFinal = /writing the single final answer/.test(prompt);
     const isReview = /REVIEW ROUND/.test(prompt);
     return new Promise((resolve, reject) => {
-      const delay = question.includes('[slow]') ? 60000 : 150 + (id.length * 40);
+      const streaming = question.includes('[stream]');
+      const delay = question.includes('[slow]') ? 60000 : streaming ? 2500 : 150 + (id.length * 40);
+      // [stream]: send growing partial text for a while before the answer is complete.
+      let ticker = null;
+      if (streaming && onText) {
+        let n = 0;
+        ticker = setInterval(() => { n += 1; onText(`Streaming from ${id}: ${'word '.repeat(n * 3)}`); }, 200);
+      }
+      signal?.addEventListener('abort', () => clearInterval(ticker), { once: true });
       const timer = setTimeout(() => {
+        clearInterval(ticker);
         const failOnce = question.includes(`[failonce:${id}]`) && attempts[id] === 1;
         if (question.includes(`[fail:${id}]`) || failOnce) return reject(new AdapterError('rate-limited', `${id} usage limit reached. Try again later.`));
         if (isFinal) return resolve(`**Final combined answer** for: ${question.trim()}\n\nBoth models agree the answer is 4.\n\n## Where the models disagreed\nFakeCodex preferred a shorter explanation.`);

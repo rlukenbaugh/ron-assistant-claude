@@ -102,6 +102,11 @@
         <label class="field">Review rounds
           <select id="review-rounds"><option value="1">1 round (faster)</option><option value="2">2 rounds (more thorough)</option></select>
         </label>
+        <h3>Conversation memory</h3>
+        <label class="field">Earlier questions sent with a new one
+          <select id="context-turns"><option value="0">None (each question stands alone)</option><option value="1">The last one</option><option value="3">The last 3 (default)</option><option value="5">The last 5</option><option value="10">The last 10</option></select>
+        </label>
+        <p class="muted small">Earlier questions and final answers from the same conversation help the models follow up. They share a fixed length, so sending more makes each one shorter rather than the question longer. <em>+ New conversation</em> always starts fresh.</p>
         <label class="field">Time limit for each model
           <select id="timeout"><option value="90">90 seconds</option><option value="180">3 minutes</option><option value="300">5 minutes</option></select>
         </label>

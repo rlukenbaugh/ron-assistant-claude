@@ -5,6 +5,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { PROVIDERS } = require('./adapters');
 
+/** Shown and sent until the user saves their own. Kept out of the built-in prompt so it can be edited. */
+const DEFAULT_INSTRUCTIONS = 'I am Ron, a retired Windows 11 user. Please use plain English and lead with the answer.';
+
 const DEFAULT_SETTINGS = {
   theme: 'system', // system | light | dark
   fontSize: 18,
@@ -14,6 +17,7 @@ const DEFAULT_SETTINGS = {
   models: {},
   finalModel: 'auto',
   reviewRounds: 1,
+  contextTurns: 3, // earlier questions and final answers sent with a new question (0–10)
   timeoutSec: 180,
   speech: { output: 'windows', autoSpeak: true, muted: false, voice: '', rate: 1 },
   keepHistory: true,
@@ -41,6 +45,8 @@ function mergeSettings(saved) {
   s.autoUpdate = s.autoUpdate !== false;
   s.fontSize = Math.min(28, Math.max(14, Number(s.fontSize) || 18));
   s.reviewRounds = Math.min(2, Math.max(1, Number(s.reviewRounds) || 1));
+  const turns = Math.round(Number(s.contextTurns));
+  s.contextTurns = Number.isFinite(turns) ? Math.min(10, Math.max(0, turns)) : 3;
   s.timeoutSec = Math.min(600, Math.max(30, Number(s.timeoutSec) || 180));
   if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = 'system';
   if (!['compare', 'review'].includes(s.mode)) s.mode = 'review';
@@ -65,7 +71,8 @@ function createStore(dir) {
       writeAtomic(files.settings, JSON.stringify(next, null, 2));
       return next;
     },
-    getInstructions: () => readJson(files.instructions, { text: '', updatedAt: null }),
+    // Until instructions are first saved, the defaults stand in (they describe Ron, who this app is for).
+    getInstructions: () => readJson(files.instructions, { text: DEFAULT_INSTRUCTIONS, updatedAt: null }),
     saveInstructions(text) {
       const value = { text: String(text || '').slice(0, 20000), updatedAt: new Date().toISOString() };
       writeAtomic(files.instructions, JSON.stringify(value, null, 2));
@@ -96,4 +103,4 @@ function createStore(dir) {
   };
 }
 
-module.exports = { createStore, mergeSettings, DEFAULT_SETTINGS };
+module.exports = { createStore, mergeSettings, DEFAULT_SETTINGS, DEFAULT_INSTRUCTIONS };

@@ -21,12 +21,19 @@ const PROVIDERS = [
     destination: 'Anthropic (through your Claude Code sign-in)',
     defaultPath: () => path.join(os.homedir(), '.local', 'bin', 'claude.exe'), pathNames: ['claude.exe'], testedVersion: '2.1.322',
     // Tools, MCP servers, plugins and session history are all switched off for answering.
-    args: ({ model }) => ['-p', '--output-format', 'json', '--safe-mode', '--restricted', '--tools', '',
+    // stream-json (which needs --verbose) delivers the answer piece by piece; its closing
+    // "result" event has the same fields the plain json format had.
+    args: ({ model }) => ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--safe-mode', '--restricted', '--tools', '',
       '--strict-mcp-config', '--no-session-persistence', ...(model ? ['--model', model] : [])],
     statusArgs: ['auth', 'status'],
     parseStatus: (out) => { try { const s = JSON.parse(out); return s.loggedIn ? { ok: true, detail: `Signed in (${s.authMethod || 'account'})` } : { ok: false, detail: 'Not signed in. Run: claude auth login' }; } catch { return { ok: false, detail: 'Could not read Claude sign-in status.' }; } },
+    /** Text added by one stream event, or '' for events that carry no answer text. */
+    streamDelta: (event) => (event.type === 'stream_event' && event.event?.type === 'content_block_delta' && event.event.delta?.type === 'text_delta' ? String(event.event.delta.text || '') : ''),
     parse: (stdout) => {
-      const data = JSON.parse(stdout);
+      const events = jsonLines(stdout);
+      // The closing "result" event; a lone object without a type is the older single-json format.
+      const data = events.findLast((e) => e.type === 'result') || (events.length === 1 && !events[0].type && 'result' in events[0] ? events[0] : null);
+      if (!data) throw new AdapterError('failed', 'Claude returned no completed answer.');
       if (data.is_error || !String(data.result || '').trim()) throw new AdapterError('failed', String(data.result || 'Claude did not return an answer.'));
       return String(data.result).trim();
     },
@@ -92,6 +99,14 @@ const PROVIDERS = [
     destination: 'Stays on this computer (Ollama)', baseUrl: 'http://127.0.0.1:11434/v1',
   },
 ];
+
+/** Every output line that is a JSON object; other lines are ignored. SyntaxError when there is none. */
+function jsonLines(stdout) {
+  const events = String(stdout || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l.startsWith('{'))
+    .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  if (!events.length) throw new SyntaxError('No JSON in output.');
+  return events;
+}
 
 /** Node.js for script-based CLIs (Codex). Inside Electron, process.execPath is the app itself. */
 function resolveNode(source = process.env) {

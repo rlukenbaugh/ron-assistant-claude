@@ -55,6 +55,10 @@ const ask = fake ? createFakeAsk({ logFile: process.env.RON_ASSISTANT_FAKE_LOG }
 const orchestrator = createOrchestrator({
   ask,
   emit: (event) => {
+    if (event.type === 'partial') {
+      if (win && !win.isDestroyed()) win.webContents.send('run:partial', { runId: event.runId, key: event.key, text: event.text });
+      return;
+    }
     if (event.type === 'run') {
       runs.set(event.run.id, event.run);
       if (win && !win.isDestroyed()) win.webContents.send('run:update', event.run);
@@ -71,7 +75,8 @@ function contextFor(conversationId) {
   if (!conversationId) return [];
   const convo = store.getSettings().keepHistory ? store.getConversation(conversationId) : null;
   const turns = convo ? convo.runs.map((r) => ({ question: r.question, answer: r.final?.text || Object.values(r.answers || {}).find((a) => a.state === 'done')?.text || '' })) : (sessionContext.get(conversationId) || []);
-  return turns.filter((t) => t.answer);
+  const keep = store.getSettings().contextTurns;
+  return keep > 0 ? turns.filter((t) => t.answer).slice(-keep) : [];
 }
 
 function remember(run) {

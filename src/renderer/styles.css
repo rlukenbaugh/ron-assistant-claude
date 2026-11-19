@@ -186,3 +186,5 @@ fieldset.field { display: block; } fieldset.field label { display: block; margin
 .update-banner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 16px; background: var(--surface-2); border-bottom: 1px solid var(--final-border); font-size: 15px; }
 .update-banner[hidden] { display: none; }
 .update-banner #update-text { flex: 1; min-width: 200px; }
+.answer.streaming { white-space: pre-wrap; color: var(--muted); border-left: 3px solid var(--border); padding-left: 12px; }
+.answer.streaming[hidden] { display: none; }

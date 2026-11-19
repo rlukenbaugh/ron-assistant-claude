@@ -302,3 +302,42 @@ test('program locations can only be set through the file picker, not by the page
   await page.screenshot({ path: path.join(shots, 'connections.png') });
   await app.close();
 });
+
+test('answers stream into the window while being written, then become the formatted answer', async () => {
+  const dir = tmpDir();
+  const { app, page } = await launch(dir);
+  await setModels(page, ['claude', 'codex']);
+  await page.locator('.mode-switch [data-mode="compare"]').click();
+  await askQuestion(page, 'Count for me [stream]');
+  const run = page.locator('article.run').last();
+  const box = run.locator('.answer.streaming:visible').first();
+  await expect(box).toContainText('Streaming from', { timeout: 5000 });
+  const first = (await box.textContent()).length;
+  await expect.poll(async () => (await run.locator('.answer.streaming:visible').first().textContent() || '').length, { timeout: 3000 }).toBeGreaterThan(first);
+  await expect(box).toHaveAttribute('aria-busy', 'true');
+  await page.screenshot({ path: path.join(shots, 'streaming.png') });
+  // When the answer is complete the plain streaming box is replaced by rendered Markdown.
+  await expect(run.locator('.answer strong').first()).toHaveText('4', { timeout: 10000 });
+  await expect(run.locator('.answer.streaming')).toHaveCount(0);
+  await app.close();
+});
+
+test('review progress names the round, and the context setting is saved and explained', async () => {
+  const dir = tmpDir();
+  const { app, page } = await launch(dir);
+  await page.locator('#btn-settings').click();
+  await page.locator('.settings-tabs [data-tab="models"]').click();
+  await expect(page.locator('#context-turns')).toHaveValue('3');
+  await page.locator('#review-rounds').selectOption('2');
+  await page.locator('#context-turns').selectOption('0');
+  await page.locator('.settings-tabs [data-tab="privacy"]').click();
+  await expect(page.locator('#privacy-table')).toContainText('no earlier questions');
+  await page.locator('#settings .settings-head button').click();
+  expect(JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8')).contextTurns).toBe(0);
+  await setModels(page, ['claude', 'codex']);
+  await page.locator('.mode-switch [data-mode="review"]').click();
+  await askQuestion(page, 'What is 2 + 2?');
+  const run = page.locator('article.run').last();
+  await expect(run.locator('.progress')).toContainText(/Review round 2 of 2: 2 of 2 done/, { timeout: 20000 });
+  await app.close();
+});

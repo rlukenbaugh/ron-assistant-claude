@@ -7,6 +7,10 @@ const { getProvider } = require('./adapters');
 
 const MAX_REVIEW_ROUNDS = 2;
 const STOPPED = 'cancelled';
+const PARTIAL_MS = 150;
+
+/** Identifies one box of streaming text in the window. */
+function streamKey(stage, id, round) { return stage === 'review' ? `review:${id}:${round}` : `${stage}:${id}`; }
 
 function now() { return Date.now(); }
 
@@ -27,12 +31,26 @@ function createOrchestrator({ ask, emit = () => {} }) {
 
   function snapshot(run) { return JSON.parse(JSON.stringify(run)); }
 
-  async function callModel(run, controller, { id, prompt, settings, slot }) {
+  /**
+   * Partial text while a model is still writing. Sent as its own small event (not a whole-run
+   * snapshot) and at most every PARTIAL_MS per box; never stored in the run or history.
+   */
+  function partialSender(run, key) {
+    let last = 0;
+    return (text) => {
+      const t = now();
+      if (t - last < PARTIAL_MS) return;
+      last = t;
+      emit({ type: 'partial', runId: run.id, key, text });
+    };
+  }
+
+  async function callModel(run, controller, { id, prompt, settings, slot, key }) {
     const started = now();
     slot.state = 'running'; slot.error = ''; slot.code = '';
     update(run, {});
     try {
-      const text = await ask(id, prompt, { signal: controller.signal, timeoutSec: settings.timeoutSec || 180, model: settings.models?.[id]?.model || '', cwd: settings.workDir });
+      const text = await ask(id, prompt, { signal: controller.signal, timeoutSec: settings.timeoutSec || 180, model: settings.models?.[id]?.model || '', cwd: settings.workDir, onText: key ? partialSender(run, key) : undefined });
       Object.assign(slot, { state: 'done', text, ms: now() - started });
       return text;
     } catch (e) {
@@ -48,7 +66,7 @@ function createOrchestrator({ ask, emit = () => {} }) {
     await Promise.all(ids.map((id) => {
       run.answers[id] = { id, name: nameOf(id), state: 'queued', text: '', error: '', code: '', ms: 0 };
       const prompt = answerPrompt({ question: run.question, instructions: settings.instructions, history: run.context });
-      return callModel(run, controller, { id, stage: 'answer', prompt, settings, slot: run.answers[id] });
+      return callModel(run, controller, { id, prompt, settings, slot: run.answers[id], key: streamKey('answer', id) });
     }));
   }
 
@@ -64,6 +82,7 @@ function createOrchestrator({ ask, emit = () => {} }) {
     run.reviews = []; run.final = { state: 'queued', text: '', by: '', note: '', error: '' };
     update(run, { phase: 'review' });
     const rounds = Math.min(MAX_REVIEW_ROUNDS, Math.max(1, Number(settings.reviewRounds) || 1));
+    run.reviewRounds = rounds;
     let participants = latestAnswers(run);
     if (participants.length >= 2) {
       for (let round = 1; round <= rounds && !controller.signal.aborted; round += 1) {
@@ -72,7 +91,7 @@ function createOrchestrator({ ask, emit = () => {} }) {
           const slot = { id: self.id, name: self.name, round, state: 'queued', text: '', review: '', revised: '', error: '' };
           run.reviews.push(slot);
           const prompt = reviewPrompt({ question: run.question, instructions: settings.instructions, history: run.context, selfName: self.name, ownAnswer: self.text, answers: before, round });
-          return callModel(run, controller, { id: self.id, stage: 'review', round, prompt, settings, slot }).then((text) => {
+          return callModel(run, controller, { id: self.id, prompt, settings, slot, key: streamKey('review', self.id, round) }).then((text) => {
             if (text) Object.assign(slot, splitReview(text));
           });
         }));
@@ -96,7 +115,7 @@ function createOrchestrator({ ask, emit = () => {} }) {
       const prompt = finalPrompt({ question: run.question, instructions: settings.instructions, history: run.context, synthName: nameOf(id), answers: participants, reviews });
       const slot = { id, name: nameOf(id), state: 'queued', text: '', error: '' };
       Object.assign(run.final, { state: 'running', by: id });
-      const text = await callModel(run, controller, { id, stage: 'final', prompt, settings, slot });
+      const text = await callModel(run, controller, { id, prompt, settings, slot, key: streamKey('final', id) });
       if (text) {
         const tried = order.slice(0, order.indexOf(id));
         Object.assign(run.final, { state: 'done', text, by: id, note: tried.length ? `${tried.map(nameOf).join(', ')} could not write the final answer; ${nameOf(id)} did.` : '' });
@@ -176,4 +195,4 @@ function createOrchestrator({ ask, emit = () => {} }) {
   return { start, retry, stop, isBusy: () => Boolean(active), MAX_REVIEW_ROUNDS };
 }
 
-module.exports = { createOrchestrator, MAX_REVIEW_ROUNDS };
+module.exports = { createOrchestrator, streamKey, MAX_REVIEW_ROUNDS };

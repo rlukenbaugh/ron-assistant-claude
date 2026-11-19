@@ -245,3 +245,72 @@ test('settings keep only program locations for CLI models, and update checks def
   assert.equal(s.autoUpdate, true);
   assert.equal(mergeSettings({ autoUpdate: false }).autoUpdate, false);
 });
+
+test('Claude stream output: partial text pieces add up to the final answer, and failures stay failures', () => {
+  const p = getProvider('claude');
+  const ev = (text) => JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } } });
+  const out = [JSON.stringify({ type: 'system', subtype: 'init' }), ev('The answer '), ev('is 4.'), JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'The answer is 4.' })].join('\n');
+  const pieces = out.split('\n').map((l) => p.streamDelta(JSON.parse(l))).join('');
+  assert.equal(pieces, 'The answer is 4.');
+  assert.equal(p.parse(out), 'The answer is 4.');
+  assert.throws(() => p.parse([ev('half'), JSON.stringify({ type: 'result', is_error: true, result: 'usage limit reached' })].join('\n')), /usage limit/);
+  assert.throws(() => p.parse(ev('no result event')), /no completed answer/);
+  assert.throws(() => p.parse('not json at all'), SyntaxError);
+});
+
+test('local servers: an OpenAI-style event stream is read piece by piece', async () => {
+  const { readEventStream } = require('../../src/core/runner');
+  const enc = new TextEncoder();
+  // Lines split across chunks on purpose.
+  const chunks = ['data: {"choices":[{"delta":{"content":"Hel"}}]}\n\nda', 'ta: {"choices":[{"delta":{"content":"lo"}}]}\n\n', 'data: [DONE]\n\n'];
+  async function* body() { for (const c of chunks) yield enc.encode(c); }
+  const seen = [];
+  const text = await readEventStream(body(), (t) => seen.push(t));
+  assert.equal(text, 'Hello');
+  assert.deepEqual(seen, ['Hel', 'Hello']);
+});
+
+test('partial text is sent as small throttled events and never stored in the run', async () => {
+  const events = [];
+  const ask = async (id, prompt, { onText }) => {
+    for (let i = 1; i <= 50; i += 1) onText(`part ${i}`);
+    await new Promise((r) => setTimeout(r, 200));
+    onText('part last');
+    return `answer from ${id}`;
+  };
+  const o = createOrchestrator({ ask, emit: (e) => events.push(e) });
+  const run = await o.start({ question: 'Q?', mode: 'compare', models: ['claude'], settings });
+  const partials = events.filter((e) => e.type === 'partial');
+  assert.ok(partials.length >= 1 && partials.length <= 3, `throttled to a few events, got ${partials.length}`);
+  assert.equal(partials[0].key, 'answer:claude');
+  assert.equal(partials[0].runId, run.id);
+  assert.ok(!JSON.stringify(run).includes('part 1'), 'partials are not part of the saved run');
+});
+
+test('earlier turns share one budget, so more turns make each shorter, not the prompt longer', () => {
+  const { contextBlock } = require('../../src/core/prompts');
+  const turn = (i) => ({ question: `Q${i} ${'q'.repeat(3000)}`, answer: `A${i} ${'a'.repeat(5000)}` });
+  const three = contextBlock({ history: [1, 2, 3].map(turn) });
+  const ten = contextBlock({ history: Array.from({ length: 10 }, (_, i) => turn(i)) });
+  const twenty = contextBlock({ history: Array.from({ length: 20 }, (_, i) => turn(i)) });
+  assert.ok(ten.length <= three.length + 600, `${ten.length} vs ${three.length}`);
+  assert.equal((twenty.match(/Earlier question \d+:/g) || []).length, 10, 'at most ten turns');
+  assert.equal(contextBlock({ history: [] }), '');
+});
+
+test('the built-in prompt no longer describes Ron; the default saved instructions do', () => {
+  const { RULES } = require('../../src/core/prompts');
+  const { DEFAULT_INSTRUCTIONS, mergeSettings } = require('../../src/core/store');
+  assert.ok(!/Ron|retired/.test(RULES));
+  assert.match(answerPrompt({ question: 'Hi', instructions: DEFAULT_INSTRUCTIONS, history: [] }), /retired Windows 11 user/);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ron-instr-'));
+  try {
+    const store = createStore(dir);
+    assert.equal(store.getInstructions().text, DEFAULT_INSTRUCTIONS, 'defaults until first saved');
+    store.saveInstructions('');
+    assert.equal(store.getInstructions().text, '', 'a saved empty text is respected');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  assert.equal(mergeSettings({}).contextTurns, 3);
+  assert.equal(mergeSettings({ contextTurns: 0 }).contextTurns, 0);
+  assert.equal(mergeSettings({ contextTurns: 50 }).contextTurns, 10);
+});
