@@ -101,8 +101,17 @@ test('compare mode shows independent answers side by side without a final answer
   await expect(run.locator('.grid [data-model-panel="gemini"] .answer')).toContainText('Answer from gemini', { timeout: 15000 });
   await expect(run.locator('.final')).toHaveCount(0);
   expect(await run.evaluate((el) => [...el.childNodes].filter((n) => n.nodeType === 3).length)).toBe(0); // no stray text such as "null"
-  const tops = await run.locator('.grid .model-col').evaluateAll((cols) => cols.map((c) => Math.round(c.getBoundingClientRect().top)));
-  expect(new Set(tops).size).toBe(1); // genuinely side by side at this window size
+  // Side by side whenever there is room for three 290 px columns; CI screens can be too small
+  // for the 1280 px window, so ask for that size and then judge by the width actually available.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1280, 900));
+  await page.waitForTimeout(300);
+  const { tops, room } = await run.locator('.grid').evaluate((grid) => {
+    const style = getComputedStyle(grid);
+    const inner = grid.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    return { tops: [...grid.querySelectorAll('.model-col')].map((c) => Math.round(c.getBoundingClientRect().top)), room: inner };
+  });
+  const fitsThree = room >= 3 * 290 + 2 * 12;
+  expect(new Set(tops).size, `grid has ${room}px for 3 columns`).toBe(fitsThree ? 1 : 2);
   expect(calls(log)).toHaveLength(3);
   expect(await page.evaluate(() => window.__spoken.length)).toBe(0);
   await page.locator('#btn-theme').click();
