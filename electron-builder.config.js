@@ -22,7 +22,10 @@ const config = {
   appId: 'com.rlukenbaugh.ronassistant.claude',
   productName: 'Ron Assistant',
   directories: { output: 'release' },
-  publish: { provider: 'github', owner: 'rlukenbaugh', repo: 'ron-assistant-claude', releaseType: 'release' },
+  // Uploads go into a draft that the release workflow creates first and publishes last. Letting
+  // electron-builder create the release itself raced: the installer and the portable exe each
+  // created one, leaving two releases with the same tag (seen with v0.3.0).
+  publish: { provider: 'github', owner: 'rlukenbaugh', repo: 'ron-assistant-claude', releaseType: 'draft' },
   files: ['src/**/*', 'build/icons/**/*', 'package.json', '!**/*.map', '!**/*.d.ts'],
   win: {
     icon: 'build/icons/icon.ico',

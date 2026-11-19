@@ -85,7 +85,18 @@ jobs:
       - name: End-to-end tests
         run: npm run test:e2e
 
-      - name: Build desktop release and publish assets
+      # One draft release is created here, before anything is built. electron-builder uploads every
+      # file into it (two targets creating releases at once made duplicates), and the last step
+      # publishes it, so nobody sees a half-uploaded release.
+      - name: Create draft release
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          gh release view "v$version" --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) { throw "A release for v$version already exists. Delete it (or bump the version) before releasing again." }
+          gh release create "v$version" --repo $env:GITHUB_REPOSITORY --draft --verify-tag --title "Ron Assistant v$version" --notes "Building…"
+
+      - name: Build desktop release and upload assets
         run: npm run publish:win
 
       - name: Note unsigned release fallback
@@ -103,11 +114,15 @@ jobs:
           $version = (Get-Content package.json | ConvertFrom-Json).version
           gh release upload "v$version" "release/Ron-Assistant-Portable-$version-x64.exe" --repo $env:GITHUB_REPOSITORY --clobber
 
-      - name: Apply polished release notes
+      - name: Check every file is attached, then publish the release
         shell: pwsh
         run: |
           $version = (Get-Content package.json | ConvertFrom-Json).version
-          gh release edit "v$version" --repo $env:GITHUB_REPOSITORY --title "Ron Assistant v$version" --notes-file release-notes.md
+          $names = gh release view "v$version" --repo $env:GITHUB_REPOSITORY --json assets -q '.assets[].name'
+          foreach ($need in @("Ron-Assistant-Setup-$version-x64.exe", "Ron-Assistant-Setup-$version-x64.exe.blockmap", "Ron-Assistant-Portable-$version-x64.exe", "latest.yml")) {
+            if ($names -notcontains $need) { throw "The release is missing $need; it stays a draft." }
+          }
+          gh release edit "v$version" --repo $env:GITHUB_REPOSITORY --title "Ron Assistant v$version" --notes-file release-notes.md --draft=false --latest
 
       - name: Upload Playwright artifacts on failure
         if: failure()
