@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('ron', {
   saveInstructions: invoke('instructions:save'),
   checkConnections: invoke('connections:check'),
   testConnection: invoke('connections:test'),
+  choosePath: invoke('connections:choosePath'),
+  resetPath: invoke('connections:resetPath'),
   ask: invoke('ask:start'),
   retry: invoke('ask:retry'),
   stop: invoke('ask:stop'),
@@ -27,6 +29,14 @@ contextBridge.exposeInMainWorld('ron', {
   jarvisStatus: invoke('jarvis:status'),
   jarvisSpeak: invoke('jarvis:speak'),
   openDataFolder: invoke('app:openDataFolder'),
+  updateStatus: invoke('update:status'),
+  checkUpdate: invoke('update:check'),
+  installUpdate: invoke('update:install'),
+  onUpdate: (fn) => {
+    const handler = (_e, status) => fn(status);
+    ipcRenderer.on('update:status', handler);
+    return () => ipcRenderer.removeListener('update:status', handler);
+  },
   onRun: (fn) => {
     const handler = (_e, run) => fn(run);
     ipcRenderer.on('run:update', handler);

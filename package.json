@@ -1,7 +1,7 @@
 {
   "name": "ron-assistant-claude",
   "productName": "Ron Assistant",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Ask Claude, Codex and other configured models at once, compare or let them review each other, and hear the final answer.",
   "main": "src/main/main.js",
@@ -29,6 +29,7 @@
     "node": ">=22"
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "markdown-it": "^14.3.3"
   },
   "devDependencies": {

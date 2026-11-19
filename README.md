@@ -6,7 +6,9 @@ It is separate from Jarvis: its own program folder, its own data in `%APPDATA%\r
 
 ## Install
 
-Run `Ron-Assistant-Setup-0.1.0-x64.exe` (from `release\` or the GitHub release). Windows may show a SmartScreen warning because the build is not code-signed: choose **More info → Run anyway**. A portable `.exe` that needs no installation is also built.
+Run `Ron-Assistant-Setup-0.2.0-x64.exe` (from `release\` or the GitHub release). Windows may show a SmartScreen warning because the build is not code-signed: choose **More info → Run anyway**. A portable `.exe` that needs no installation is also built.
+
+The installed app **updates itself**: it checks GitHub Releases at start-up and every six hours, downloads a new version in the background, and installs it when you close the app (or at once with **Restart now** on the banner). The portable `.exe` does not update itself. Versions before 0.2.0 have no updater, so install 0.2.0 by hand once.
 
 ## Use
 
@@ -22,15 +24,18 @@ Run `Ron-Assistant-Setup-0.1.0-x64.exe` (from `release\` or the GitHub release).
 ### Settings
 
 - **My instructions** — preferences sent with every question (kept separately from history).
-- **Models & connections** — sign-in status, a **Test** button (sends one tiny question), which model writes the final answer, 1 or 2 review rounds, and per-model time limits.
+- **Models & connections** — sign-in status, the installed version and location of each program, a **Test** button (sends one tiny question), **Choose location…** if a program is installed somewhere the app does not look, which model writes the final answer, 1 or 2 review rounds, and per-model time limits. If a CLI is a newer minor/major version (or any older version) than the one this app was checked with, a warning says so, and it is repeated under any answer from that model that fails.
 - **Voice** — Windows voice, the JARVIS avatar (needs a live avatar conversation in Jarvis: *Command → Avatar*), or off.
-- **History & privacy** — keep or don't keep conversations, delete all, and a table of exactly what is sent where.
+- **History & privacy** — keep or don't keep conversations, delete all, automatic update checks on/off with **Check for updates now**, and a table of exactly what is sent where.
 
 ### Links in answers
 
 Every link is a **model suggestion that nobody has checked**. Links are marked ↗ and listed under *Links suggested by … — not checked*. **Check link** only confirms that the page responds; it does not confirm the content. The models are told not to claim they verified anything, and they run without web access.
 
 ## What is sent where
+
+Update checks (installed app only, can be turned off) contact github.com for the release list and the installer; nothing about your questions, answers or settings is sent.
+
 
 When a model is on it receives: your question, your saved instructions, up to three earlier questions and final answers from the same conversation, and — in Review together — the other models' answers and reviews. Claude goes to Anthropic, Codex to OpenAI, Gemini to Google (each through the sign-in already on this PC), local servers stay on this computer. No API keys are used or stored; answers count against your existing plans.
 
@@ -55,12 +60,26 @@ npm run dist:win     # installer + portable exe in release\
 node tests/smoke/packaged-smoke.mjs   # packaged app + real Claude/Codex, throwaway data folder
 ```
 
+## Verified on 2026-11-19 (0.2.0 additions)
+
+- Lint clean; 17 unit tests (adds CLI discovery on PATH and chosen locations, version warnings, settings filtering); 10 Electron end-to-end tests (adds the update banner, Later, turning update checks off, and the page being unable to set a program location).
+- Real connection check found all four CLIs at their usual locations with versions; it flagged Gemini (agy) 1.5.12 as newer than the tested 1.5.11 without a warning, as patch releases are allowed.
+- An unpacked packaged build includes electron-updater, starts, runs the first update check after 15 s and logs a failure without disturbing the app. A full installer build and an end-to-end update from one GitHub release to the next have **not** been tried yet; that needs two published releases.
+
 ## Verified on 2026-11-18
 
 - Lint clean; 14 unit tests; 8 Electron end-to-end tests (both models receive the question, independent answers in their own tabs, exactly one review per model and one final call, copy menus, Ctrl+C/Ctrl+V, links opening externally, hostile HTML rendered inert, Stop, rate-limited model + Retry, avatar failure falling back to the Windows voice, settings/instructions/history surviving a restart, history off).
 - Live: 15/15 checks with the real Claude Code, Codex and Gemini sign-ins (Compare 14 s, Review together 57 s with three models, real process cancellation).
 - Packaged app (`release\win-unpacked`) answered a real Review-together question with Claude and Codex: 7/7 checks.
 - The original Jarvis kept running throughout (all four agents detected, avatar ready); none of its files or the jarvis-agent-bridge were changed.
+
+## Finding the model programs
+
+Each CLI is looked for in this order: the location you chose in Settings, its usual install folder (`%USERPROFILE%\.local\bin\claude.exe`, `%APPDATA%\npm\node_modules\@openai\codex\bin\codex.js`, `%LOCALAPPDATA%\agy\bin\agy.exe`, `%LOCALAPPDATA%\hermes\bin\hermes.exe`), then every folder on `PATH` (for Codex, the `codex.cmd` shim is followed to its script). A chosen location can only be set through the file picker; the page cannot set one. The versions the command lines were checked with are the `testedVersion` values in `src/core/adapters.js`; update them after re-running `npm run test:live` on a new CLI version.
+
+## Logs and crashes
+
+`%APPDATA%\ron-assistant-claude\logs\app.log` holds status lines only (never questions, answers or keys). It is moved to `app.log.1` when it passes 1 MB. Uncaught errors, unhandled promise rejections, page errors and crashed processes are recorded there; if the window's page crashes it is reloaded (at most three times a minute).
 
 ## Known limitations
 
@@ -70,7 +89,7 @@ node tests/smoke/packaged-smoke.mjs   # packaged app + real Claude/Codex, throwa
 - **Ollama** is not installed and **LM Studio**'s server is not running, so local models show as unavailable; the adapter (OpenAI-compatible HTTP) was unit-checked, not run against a real server.
 - Links are never verified by the models. **Check link** confirms only that a page responds.
 - Answers are not streamed word by word; each model's answer appears when it is complete.
-- The installer is **not code-signed**, so SmartScreen will warn. Installing was not run on this PC, to avoid adding shortcuts that might clash with the other "ron-assistant" build in progress.
+- The installer is **not code-signed**, so SmartScreen will warn (also for each update, since electron-updater cannot check a publisher signature on an unsigned build). Installing was not run on this PC, to avoid adding shortcuts that might clash with the other "ron-assistant" build in progress.
 - Context sent to models is limited to the last three questions and answers of a conversation.
 
 See [docs/feature-map.md](docs/feature-map.md) for the Jarvis inspection and reuse decisions.

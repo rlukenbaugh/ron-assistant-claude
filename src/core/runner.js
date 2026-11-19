@@ -2,7 +2,7 @@
 // Runs one question against one provider with a hard timeout and a Stop signal.
 const { spawn, execFile } = require('node:child_process');
 const fs = require('node:fs');
-const { AdapterError, classifyFailure, childEnvironment, getProvider, spawnSpec, installedPath, checkedPrompt, checkedAnswer, PROVIDERS } = require('./adapters');
+const { AdapterError, classifyFailure, childEnvironment, getProvider, spawnSpec, commandSpec, installedPath, checkedPrompt, checkedAnswer, parseVersion, versionNote, PROVIDERS } = require('./adapters');
 
 function killTree(child) {
   if (!child || child.exitCode !== null || !child.pid) return;
@@ -101,13 +101,20 @@ async function checkConnection(id, { fetchImpl = fetch } = {}) {
       return models.length ? { state: 'ready', detail: `Running · ${models.length} model(s): ${models.slice(0, 3).join(', ')}` } : { state: 'unavailable', detail: 'Running, but no model is loaded.' };
     } catch { return { state: 'unavailable', detail: 'Not running on this computer.' }; }
   }
-  if (!installedPath(id)) return { state: 'unavailable', detail: 'Not installed on this computer.' };
-  if (!p.statusArgs) return { state: 'unknown', detail: 'Installed. Sign-in can only be confirmed with “Test”.' };
-  const spec = spawnSpec(id);
-  const args = p.script ? [p.script(), ...p.statusArgs] : p.statusArgs;
-  const { out } = await execText(spec.command, args, 45000);
-  const s = p.parseStatus(out);
-  return { state: s.ok ? 'ready' : 'signin', detail: s.detail };
+  const file = installedPath(id);
+  if (!file) return { state: 'unavailable', detail: 'Not installed on this computer.' };
+  const v = commandSpec(id, ['--version']);
+  const versionCheck = execText(v.command, v.args, 20000).then((r) => parseVersion(r.out));
+  let result;
+  if (!p.statusArgs) result = { state: 'unknown', detail: 'Installed. Sign-in can only be confirmed with “Test”.' };
+  else {
+    const spec = commandSpec(id, p.statusArgs);
+    const { out } = await execText(spec.command, spec.args, 45000);
+    const s = p.parseStatus(out);
+    result = { state: s.ok ? 'ready' : 'signin', detail: s.detail };
+  }
+  const version = await versionCheck.catch(() => '');
+  return { ...result, path: file, version, testedVersion: p.testedVersion || '', warning: versionNote(id, version) };
 }
 
 async function checkAll(opts) {

@@ -194,3 +194,54 @@ test('Jarvis avatar speech uses the local key only for the localhost request and
   await assert.rejects(jarvis.speak('x', { fetchImpl: down, keyFile }), (e) => /not running/.test(e.message) && !e.message.includes('test-key'));
   await assert.rejects(jarvis.speak('x', { fetchImpl, keyFile: path.join(dir, 'missing') }), /not set up/);
 });
+
+test('CLI programs are found in the usual folder, then on PATH, and a chosen location wins when it exists', () => {
+  const { locate, candidatePaths, setPathOverrides } = require('../../src/core/adapters');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ron-cli-'));
+  const onPath = path.join(dir, 'bin');
+  fs.mkdirSync(path.join(onPath, 'node_modules', '@openai', 'codex', 'bin'), { recursive: true });
+  fs.writeFileSync(path.join(onPath, 'claude.exe'), '');
+  fs.writeFileSync(path.join(onPath, 'codex.cmd'), '');
+  fs.writeFileSync(path.join(onPath, 'node_modules', '@openai', 'codex', 'bin', 'codex.js'), '');
+  const env = { PATH: onPath };
+  try {
+    setPathOverrides({});
+    // The usual install folder comes before PATH.
+    const claude = candidatePaths(getProvider('claude'), env);
+    assert.equal(claude.at(-1), path.join(onPath, 'claude.exe'));
+    // The npm codex.cmd shim on PATH resolves to the real script beside it.
+    assert.ok(candidatePaths(getProvider('codex'), env).includes(path.join(onPath, 'node_modules', '@openai', 'codex', 'bin', 'codex.js')));
+    // A chosen location is tried first; one that no longer exists falls through to the others.
+    const chosen = path.join(dir, 'chosen-claude.exe');
+    fs.writeFileSync(chosen, '');
+    setPathOverrides({ claude: chosen });
+    assert.equal(locate('claude', env), chosen);
+    setPathOverrides({ claude: path.join(dir, 'gone.exe') });
+    assert.notEqual(locate('claude', env), path.join(dir, 'gone.exe'));
+    assert.equal(locate('lmstudio'), null);
+  } finally { setPathOverrides({}); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('CLI versions are compared with the tested ones; only meaningful differences warn', () => {
+  const { parseVersion, compareVersions, versionNote } = require('../../src/core/adapters');
+  assert.equal(parseVersion('2.1.322 (Claude Code)'), '2.1.322');
+  assert.equal(parseVersion('codex-cli 0.170.0\n'), '0.170.0');
+  assert.equal(parseVersion('no version here'), '');
+  assert.equal(compareVersions('1.10.0', '1.9.9'), 1);
+  assert.equal(compareVersions('1.2.3', '1.2.3'), 0);
+  const tested = getProvider('claude').testedVersion;
+  const [maj, min, patch] = tested.split('.').map(Number);
+  assert.equal(versionNote('claude', tested), '');
+  assert.equal(versionNote('claude', `${maj}.${min}.${patch + 5}`), '', 'a newer patch release is not worth a warning');
+  assert.match(versionNote('claude', `${maj}.${min + 1}.0`), /newer than the version this app was checked with/);
+  assert.match(versionNote('claude', `${maj}.${min}.${Math.max(0, patch - 1)}`), /older/);
+  assert.equal(versionNote('claude', ''), '');
+});
+
+test('settings keep only program locations for CLI models, and update checks default to on', () => {
+  const { mergeSettings } = require('../../src/core/store');
+  const s = mergeSettings({ paths: { claude: 'C:/x/claude.exe', lmstudio: 'C:/x.exe', bogus: 'y', codex: '' } });
+  assert.deepEqual(s.paths, { claude: 'C:/x/claude.exe' });
+  assert.equal(s.autoUpdate, true);
+  assert.equal(mergeSettings({ autoUpdate: false }).autoUpdate, false);
+});

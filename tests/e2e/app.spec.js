@@ -265,3 +265,40 @@ test('settings, instructions and history survive a full restart; history can be 
   await expect(page.locator('#history-note')).toContainText('History is off');
   await app.close();
 });
+
+test('a downloaded update shows a banner with Restart now and Later, and settings show update status', async () => {
+  const dir = tmpDir();
+  const { app, page } = await launch(dir, { RON_ASSISTANT_FAKE_UPDATE: '9.9.9' });
+  await expect(page.locator('#update-banner')).toBeHidden();
+  await page.locator('#btn-settings').click();
+  await page.locator('.settings-tabs [data-tab="privacy"]').click();
+  await expect(page.locator('#auto-update')).toBeChecked();
+  await page.locator('#btn-check-update').click();
+  await expect(page.locator('#update-status')).toContainText('9.9.9 is ready');
+  await page.locator('#settings .settings-head button').click();
+  await expect(page.locator('#update-banner')).toBeVisible();
+  await expect(page.locator('#update-text')).toContainText('9.9.9');
+  await page.screenshot({ path: path.join(shots, 'update-banner.png') });
+  await page.locator('#btn-update-later').click();
+  await expect(page.locator('#update-banner')).toBeHidden();
+  // Turning automatic checks off is saved.
+  await page.locator('#btn-settings').click();
+  await page.locator('.settings-tabs [data-tab="privacy"]').click();
+  await page.locator('#auto-update').uncheck();
+  await expect.poll(() => JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8')).autoUpdate).toBe(false);
+  await app.close();
+});
+
+test('program locations can only be set through the file picker, not by the page', async () => {
+  const dir = tmpDir();
+  const { app, page } = await launch(dir);
+  await page.evaluate(() => window.ron.saveSettings({ paths: { claude: 'C:/evil.exe' }, fontSize: 20 }));
+  const saved = JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'));
+  expect(saved.fontSize).toBe(20);
+  expect(saved.paths).toEqual({});
+  await page.locator('#btn-settings').click();
+  await page.locator('.settings-tabs [data-tab="models"]').click();
+  await expect(page.locator('.conn[data-conn="claude"]')).toContainText('Choose location…');
+  await page.screenshot({ path: path.join(shots, 'connections.png') });
+  await app.close();
+});

@@ -31,6 +31,12 @@
     </div>
   </header>
 
+  <div id="update-banner" class="update-banner" role="status" hidden>
+    <span id="update-text"></span>
+    <button type="button" id="btn-update-now" class="btn btn-small btn-primary">Restart now</button>
+    <button type="button" id="btn-update-later" class="btn btn-small">Later</button>
+  </div>
+
   <div class="layout">
     <aside class="sidebar" aria-label="Conversations">
       <button type="button" id="btn-new" class="btn btn-primary btn-block">+ New conversation</button>
@@ -122,6 +128,10 @@
         <label class="check"><input type="checkbox" id="keep-history"> Keep conversations on this computer</label>
         <p class="muted small">When off, conversations are forgotten when you close the app, and nothing new is saved. Your saved instructions are not affected.</p>
         <div class="row"><button type="button" id="btn-clear-history" class="btn btn-danger">Delete all saved conversations…</button><button type="button" id="btn-data-folder" class="btn">Open data folder</button></div>
+        <h3>Updates</h3>
+        <label class="check"><input type="checkbox" id="auto-update"> Check for new versions automatically</label>
+        <p class="muted small">The installed app asks GitHub (github.com) whether a newer Ron Assistant has been released, at start-up and every six hours, and downloads it in the background. Nothing about your questions, answers or settings is sent. The new version is installed when you close the app, or straight away if you choose <em>Restart now</em>.</p>
+        <div class="row"><button type="button" id="btn-check-update" class="btn">Check for updates now</button><span id="update-status" class="muted small"></span></div>
         <h3>What is sent to each model</h3>
         <div id="privacy-table"></div>
       </section>

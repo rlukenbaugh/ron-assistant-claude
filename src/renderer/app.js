@@ -183,7 +183,8 @@ function modelBody(run, id) {
   if (!a || a.state === 'queued' || a.state === 'running') return h('p', { class: 'muted' }, badge(`${nameOf(id)} is ${a?.state === 'running' ? 'thinking' : 'waiting'}…`, a?.state || 'queued'));
   if (a.state !== 'done') {
     const why = a.code === 'rate-limited' ? 'hit a usage or rate limit' : a.code === 'signin' ? 'needs signing in' : a.code === 'timeout' ? 'ran out of time' : a.code === 'cancelled' ? 'was stopped' : 'could not answer';
-    return h('div', {}, h('div', { class: 'error-box', role: 'alert' }, h('strong', { text: `${nameOf(id)} ${why}. ` }), a.error || ''), run.status !== 'running' ? retryButton(run, id) : null);
+    const hint = a.code === 'failed' && state.connections[id]?.warning ? h('p', { class: 'small muted', text: state.connections[id].warning }) : null;
+    return h('div', {}, h('div', { class: 'error-box', role: 'alert' }, h('strong', { text: `${nameOf(id)} ${why}. ` }), a.error || ''), hint, run.status !== 'running' ? retryButton(run, id) : null);
   }
   return h('div', {}, answerNode(a.text), linksNode(a.text, nameOf(id)));
 }
@@ -448,8 +449,13 @@ function renderConnections() {
     return h('div', { class: 'conn', 'data-conn': p.id },
       h('span', { class: `dot ${c.state}`, 'aria-hidden': 'true' }),
       h('span', {}, h('span', { class: 'name', text: p.name }), ' ', h('span', { class: 'small muted', text: `· ${label[c.state] || c.state}` })),
-      h('span', { class: 'detail', text: `${p.vendor}. ${c.detail}` }),
+      h('span', { class: 'detail' }, `${p.vendor}. ${c.detail}`,
+        c.version ? h('span', { class: 'block', text: `Version ${c.version}${c.testedVersion && c.testedVersion !== c.version ? ` (checked with ${c.testedVersion})` : ''}` }) : null,
+        c.path ? h('span', { class: 'block path', text: `${state.settings.paths?.[p.id] ? 'Location (chosen by you)' : 'Location'}: ${c.path}` }) : null,
+        c.warning ? h('span', { class: 'block warning', role: 'note', text: c.warning }) : null),
       h('span', { class: 'actions' },
+        p.kind === 'cli' ? h('button', { type: 'button', class: 'btn btn-small', text: 'Choose location…', title: `Pick the ${p.name} program if it is installed somewhere this app does not look`, onclick: () => choosePath(p.id) }) : null,
+        p.kind === 'cli' && state.settings.paths?.[p.id] ? h('button', { type: 'button', class: 'btn btn-small', text: 'Use automatic location', onclick: () => resetPath(p.id) }) : null,
         c.state !== 'unavailable' ? h('button', { type: 'button', class: 'btn btn-small', text: 'Test', title: 'Sends a one-line test question (uses a little of your plan quota)', onclick: async (e) => {
           e.target.disabled = true; result.textContent = 'Testing…';
           const r = await ron.testConnection(p.id);
@@ -461,13 +467,28 @@ function renderConnections() {
   sel.value = state.settings.finalModel;
 }
 
+async function choosePath(id) {
+  try {
+    const out = await ron.choosePath(id);
+    if (!out) return;
+    const r = out.connection;
+    state.settings = out.settings; state.connections[id] = r; renderConnections(); renderChips();
+    toast(r.state === 'unavailable' ? `${nameOf(id)} was not found there` : `${nameOf(id)} location saved`);
+  } catch (e) { toast(cleanError(e)); }
+}
+async function resetPath(id) {
+  const out = await ron.resetPath(id);
+  state.settings = out.settings; state.connections[id] = out.connection; renderConnections(); renderChips();
+  toast(`${nameOf(id)} will be found automatically`);
+}
+
 function renderPrivacy() {
   const rows = state.providers.map((p) => h('tr', {}, h('td', { text: p.name }), h('td', { text: p.destination }),
     h('td', { text: state.settings.enabled[p.id] && usable(p.id) ? 'On' : 'Off' })));
   $('#privacy-table').replaceChildren(
     h('p', { class: 'small', text: 'When a model is on, it receives: your question; your saved instructions; up to three earlier questions and final answers from the same conversation; and, in Review together, the other models’ answers and reviews. Nothing else from your computer is attached. Models are asked not to use tools, files or the web, and Claude and Codex run with tools disabled.' }),
     h('table', { class: 'privacy-table' }, h('thead', {}, h('tr', {}, h('th', { text: 'Model' }), h('th', { text: 'Where it is processed' }), h('th', { text: 'Currently' }))), h('tbody', {}, rows)),
-    h('p', { class: 'small muted', text: 'Speech: the Windows voice runs on this computer. The JARVIS avatar option sends only the final answer to your Jarvis app, which passes it to its avatar service.' }));
+    h('p', { class: 'small muted', text: 'Speech: the Windows voice runs on this computer. The JARVIS avatar option sends only the final answer to your Jarvis app, which passes it to its avatar service. Update checks (if on) contact github.com only to look for a newer version of this app.' }));
 }
 
 function loadVoices() {
@@ -485,6 +506,7 @@ function openSettings(tab = 'instructions') {
   $('#auto-speak').checked = s.speech.autoSpeak;
   $('#voice-rate').value = s.speech.rate;
   $('#keep-history').checked = s.keepHistory;
+  $('#auto-update').checked = s.autoUpdate;
   $('#theme-select').value = s.theme;
   $('#font-size').value = s.fontSize; $('#font-size-label').textContent = `${s.fontSize}px`;
   $('#reading-width').value = s.readingWidth;
@@ -527,6 +549,39 @@ function wireSettings() {
   $('#btn-recheck').addEventListener('click', async () => { state.connections = {}; renderConnections(); await refreshConnections(); toast('Connections checked'); });
 }
 
+// ---------- updates ----------
+function updateStatusText(u) {
+  switch (u?.state) {
+    case 'checking': return 'Checking for updates…';
+    case 'current': return `You have the latest version (${u.current}).`;
+    case 'downloading': return `Downloading version ${u.version}… ${u.percent || 0}%`;
+    case 'ready': return `Version ${u.version} is ready to install.`;
+    case 'error': return u.detail || 'Could not check for updates.';
+    case 'unsupported': return u.detail || '';
+    default: return u?.current ? `Version ${u.current}.` : '';
+  }
+}
+function onUpdate(u) {
+  state.update = u;
+  $('#update-status').textContent = updateStatusText(u);
+  const banner = $('#update-banner');
+  if (u?.state === 'ready' && !state.updateDismissed) {
+    $('#update-text').textContent = `Ron Assistant ${u.version} is ready. It will be installed when you close the app.`;
+    banner.hidden = false;
+  } else if (u?.state !== 'ready') banner.hidden = true;
+}
+function wireUpdates() {
+  $('#auto-update').addEventListener('change', (e) => { saveSettings({ autoUpdate: e.target.checked }); toast(e.target.checked ? 'Will check for updates automatically' : 'Automatic update checks are off'); });
+  $('#btn-check-update').addEventListener('click', async () => { onUpdate({ ...state.update, state: 'checking' }); onUpdate(await ron.checkUpdate()); });
+  $('#btn-update-later').addEventListener('click', () => { state.updateDismissed = true; $('#update-banner').hidden = true; });
+  $('#btn-update-now').addEventListener('click', async () => {
+    if (state.busy) { toast('Wait for the current answer or press Stop, then restart.'); return; }
+    if (await ron.installUpdate()) $('#update-text').textContent = 'Restarting to install the update…';
+  });
+  ron.onUpdate(onUpdate);
+  ron.updateStatus().then(onUpdate);
+}
+
 // ---------- wiring ----------
 function wire() {
   $('#composer').addEventListener('submit', (e) => {
@@ -560,6 +615,7 @@ function wire() {
   });
   $('#thread').addEventListener('auxclick', (e) => { if (e.target.closest('a')) e.preventDefault(); });
   wireSettings();
+  wireUpdates();
 }
 
 async function init() {

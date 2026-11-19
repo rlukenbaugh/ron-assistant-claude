@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, shell, clipboard, Menu, nativeTheme, session } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, clipboard, Menu, nativeTheme, session, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { createStore } = require('../core/store');
@@ -7,8 +7,9 @@ const { createOrchestrator } = require('../core/orchestrator');
 const runner = require('../core/runner');
 const markdown = require('../core/markdown');
 const jarvis = require('../core/jarvis');
-const { PROVIDERS } = require('../core/adapters');
+const { PROVIDERS, setPathOverrides, getProvider } = require('../core/adapters');
 const { createFakeAsk } = require('../core/fakeAgents');
+const { createUpdater } = require('./updater');
 
 // A model answering a question must never be able to start this app (no recursive delegation).
 if (process.env.RON_ASSISTANT_CHILD) { process.stderr.write('Ron Assistant refuses to start inside one of its own model sessions.\n'); app.exit(2); }
@@ -20,15 +21,35 @@ app.setAppUserModelId('com.rlukenbaugh.ronassistant.claude');
 
 const fake = process.env.RON_ASSISTANT_FAKE === '1';
 const store = createStore(dataDir);
+setPathOverrides(store.getSettings().paths);
 const logFile = path.join(dataDir, 'logs', 'app.log');
+const LOG_LIMIT = 1_000_000; // bytes; one older file (app.log.1) is kept
 function log(line) {
   // Status only: never question text, answers, or keys.
-  try { fs.mkdirSync(path.dirname(logFile), { recursive: true }); fs.appendFileSync(logFile, `${new Date().toISOString()} ${line}\n`); } catch { /* logging is best effort */ }
+  try {
+    fs.mkdirSync(path.dirname(logFile), { recursive: true });
+    try { if (fs.statSync(logFile).size > LOG_LIMIT) fs.renameSync(logFile, `${logFile}.1`); } catch { /* no log yet */ }
+    fs.appendFileSync(logFile, `${new Date().toISOString()} ${line}\n`);
+  } catch { /* logging is best effort */ }
 }
+function errorLine(e) {
+  // Error name, message and the first stack frames. Messages from adapters are already redacted.
+  if (!(e instanceof Error)) return String(e).slice(0, 300);
+  const frames = String(e.stack || '').split('\n').slice(1, 5).map((l) => l.trim()).join(' | ');
+  return `${e.name}: ${String(e.message).slice(0, 300)}${frames ? ` | ${frames}` : ''}`;
+}
+process.on('uncaughtException', (e) => log(`ERROR uncaught exception: ${errorLine(e)}`));
+process.on('unhandledRejection', (e) => log(`ERROR unhandled rejection: ${errorLine(e)}`));
+app.on('child-process-gone', (_e, d) => log(`ERROR ${d.type} process gone: ${d.reason} (exit ${d.exitCode})`));
 
 let win = null;
 const runs = new Map(); // run id → latest run (for Retry), this session only
 const sessionContext = new Map(); // conversation id → [{question, answer}] when history is off
+const updater = createUpdater({
+  log,
+  send: (status) => { if (win && !win.isDestroyed()) win.webContents.send('update:status', status); },
+  fakeVersion: fake ? (process.env.RON_ASSISTANT_FAKE_UPDATE || '') : '',
+});
 
 const ask = fake ? createFakeAsk({ logFile: process.env.RON_ASSISTANT_FAKE_LOG }) : runner.ask;
 const orchestrator = createOrchestrator({
@@ -80,6 +101,20 @@ function createWindow() {
   win.removeMenu();
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   win.once('ready-to-show', () => win.show());
+  // If the page crashes, log it and reload rather than leaving a blank window. Give up after
+  // three crashes in a minute so a page that crashes on load does not loop forever.
+  let crashes = [];
+  win.webContents.on('render-process-gone', (_e, d) => {
+    log(`ERROR window process gone: ${d.reason} (exit ${d.exitCode})`);
+    if (d.reason === 'clean-exit' || win.isDestroyed()) return;
+    crashes = crashes.filter((t) => Date.now() - t < 60000).concat(Date.now());
+    if (crashes.length <= 3) win.webContents.reload();
+  });
+  win.on('unresponsive', () => log('window became unresponsive'));
+  win.on('responsive', () => log('window responsive again'));
+  win.webContents.on('console-message', (details) => {
+    if (details.level === 'error') log(`ERROR page: ${String(details.message).slice(0, 300)} (${path.basename(String(details.sourceId || ''))}:${details.lineNumber})`);
+  });
   // Nothing inside the window may navigate away or open windows; links go to the default browser.
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.webContents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: 'deny' }; });
@@ -119,12 +154,38 @@ function registerIpc() {
     conversations: store.getSettings().keepHistory ? store.listConversations() : [], version: app.getVersion(), fake, dataDir,
   }));
   ipcMain.handle('settings:save', (_e, patch) => {
-    const s = store.saveSettings(patch || {});
+    // Program locations can only be changed through the file picker below, never by the page.
+    const safePatch = { ...(patch || {}) };
+    delete safePatch.paths;
+    const s = store.saveSettings(safePatch);
     nativeTheme.themeSource = s.theme;
+    if ('autoUpdate' in safePatch) updater.schedule(s.autoUpdate);
     return s;
   });
   ipcMain.handle('instructions:save', (_e, text) => store.saveInstructions(text));
   ipcMain.handle('connections:check', async () => (fake ? Object.fromEntries(PROVIDERS.map((p) => [p.id, ['claude', 'codex', 'gemini'].includes(p.id) ? { state: 'ready', detail: 'Test double' } : { state: 'unavailable', detail: 'Not installed on this computer.' }])) : runner.checkAll()));
+  ipcMain.handle('connections:choosePath', async (_e, id) => {
+    const p = getProvider(id);
+    if (p.kind !== 'cli') throw new Error(`${p.name} is not a program on this computer.`);
+    const picked = await dialog.showOpenDialog(win, {
+      title: `Where is ${p.name} installed?`, properties: ['openFile'],
+      filters: [{ name: p.runsOnNode ? 'Program or script' : 'Program', extensions: p.runsOnNode ? ['js', 'cmd'] : ['exe'] }],
+    });
+    if (picked.canceled || !picked.filePaths[0]) return null;
+    const file = picked.filePaths[0];
+    const s = store.saveSettings({ paths: { ...store.getSettings().paths, [id]: file } });
+    setPathOverrides(s.paths);
+    log(`program location set for ${id}`);
+    return { settings: s, connection: fake ? { state: 'ready', detail: 'Test double' } : await runner.checkConnection(id) };
+  });
+  ipcMain.handle('connections:resetPath', async (_e, id) => {
+    const paths = { ...store.getSettings().paths };
+    delete paths[id];
+    // saveSettings merges, so write the whole object without this entry.
+    const s = store.saveSettings({ paths });
+    setPathOverrides(s.paths);
+    return { settings: s, connection: fake ? { state: 'ready', detail: 'Test double' } : await runner.checkConnection(id) };
+  });
   ipcMain.handle('connections:test', async (_e, id) => {
     const started = Date.now();
     try {
@@ -167,6 +228,9 @@ function registerIpc() {
     return r;
   });
   ipcMain.handle('app:openDataFolder', () => shell.openPath(dataDir));
+  ipcMain.handle('update:status', () => updater.status());
+  ipcMain.handle('update:check', () => updater.check());
+  ipcMain.handle('update:install', () => updater.install());
 }
 
 function findStoredRun(runId) {
@@ -187,6 +251,7 @@ else {
     session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (_d, cb) => cb({ cancel: true }));
     registerIpc();
     createWindow();
+    updater.schedule(store.getSettings().autoUpdate);
     log(`started v${app.getVersion()}${fake ? ' (test models)' : ''}`);
   });
   app.on('before-quit', () => orchestrator.stop());

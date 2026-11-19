@@ -17,6 +17,8 @@ const DEFAULT_SETTINGS = {
   timeoutSec: 180,
   speech: { output: 'windows', autoSpeak: true, muted: false, voice: '', rate: 1 },
   keepHistory: true,
+  autoUpdate: true,
+  paths: {}, // provider id → program location chosen in Settings (CLI models only)
 };
 
 function writeAtomic(file, data) {
@@ -35,6 +37,8 @@ function mergeSettings(saved) {
   s.enabled = { ...DEFAULT_SETTINGS.enabled, ...(saved?.enabled || {}) };
   s.speech = { ...DEFAULT_SETTINGS.speech, ...(saved?.speech || {}) };
   s.models = { ...(saved?.models || {}) };
+  s.paths = Object.fromEntries(Object.entries(saved?.paths || {}).filter(([id, v]) => PROVIDERS.some((p) => p.id === id && p.kind === 'cli') && typeof v === 'string' && v.trim()));
+  s.autoUpdate = s.autoUpdate !== false;
   s.fontSize = Math.min(28, Math.max(14, Number(s.fontSize) || 18));
   s.reviewRounds = Math.min(2, Math.max(1, Number(s.reviewRounds) || 1));
   s.timeoutSec = Math.min(600, Math.max(30, Number(s.timeoutSec) || 180));
