@@ -7,6 +7,6 @@ export default [
   { files: ['src/main/**/*.js', 'src/core/**/*.js', 'tests/**/*.js', 'playwright.config.js'], languageOptions: { sourceType: 'commonjs', globals: { ...globals.node } } },
   { files: ['**/*.mjs'], languageOptions: { sourceType: 'module', globals: { ...globals.node } } },
   { files: ['tests/e2e/**/*.js'], languageOptions: { globals: { ...globals.node, ...globals.browser } } },
-  { files: ['src/renderer/**/*.js'], languageOptions: { sourceType: 'script', globals: { ...globals.browser } } },
+  { files: ['src/renderer/**/*.js'], languageOptions: { sourceType: 'module', globals: { ...globals.browser, ron: 'readonly' } } },
   { rules: { 'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrors: 'none' }] } },
 ];
