@@ -6,7 +6,7 @@ It is separate from Jarvis: its own program folder, its own data in `%APPDATA%\r
 
 ## Install
 
-Run `Ron-Assistant-Setup-0.2.0-x64.exe` (from `release\` or the GitHub release). Windows may show a SmartScreen warning because the build is not code-signed: choose **More info → Run anyway**. A portable `.exe` that needs no installation is also built.
+Run `Ron-Assistant-Setup-0.3.0-x64.exe` (from `release\` or the GitHub release). Until code signing is set up ([docs/code-signing.md](docs/code-signing.md)), Windows shows a SmartScreen warning: choose **More info → Run anyway**. A portable `.exe` that needs no installation is also built.
 
 The installed app **updates itself**: it checks GitHub Releases at start-up and every six hours, downloads a new version in the background, and installs it when you close the app (or at once with **Restart now** on the banner). The portable `.exe` does not update itself. Versions before 0.2.0 have no updater, so install 0.2.0 by hand once.
 
@@ -15,7 +15,7 @@ The installed app **updates itself**: it checks GitHub Releases at start-up and 
 1. **Pick models** with the chips at the top. A green dot means signed in and ready; amber means it may need a sign-in; red means not installed or not running.
 2. **Pick a mode**: *Compare* (each model answers on its own) or *Review together* (answers → each model reviews the others once → one model writes the final answer).
 3. **Type or paste** your question and press **Ask** or **Ctrl+Enter**.
-4. Read the **Final answer** panel. Each model's own answer is in the tabs below it (or **Show side by side**). Open **Review discussion** to see who said what.
+4. Read the **Final answer** panel. Each model's own answer is in the tabs below it (or **Show side by side**). Open **Review discussion** to see who said what. Claude's text (and that of local LM Studio / Ollama models) appears word by word as it is written and is formatted when complete; Codex and Gemini do not report partial text, so their answers appear when finished. The progress line shows each review round (for example *Review round 1 of 2: 2 of 3 done*).
 5. **Copy ▾** on any panel copies as plain text or Markdown. **Copy complete discussion** copies everything. Ordinary selection with Ctrl+C works too.
 6. **Stop** cancels a question. **Retry <model>** re-asks a model that failed. **Regenerate** asks the same question again.
 7. Voice: 🔊 mutes/unmutes, ⏹ stops speaking, ↻ replays the last final answer. Only final answers are spoken automatically; use **Read aloud** on a model's answer to hear it.
@@ -23,8 +23,8 @@ The installed app **updates itself**: it checks GitHub Releases at start-up and 
 
 ### Settings
 
-- **My instructions** — preferences sent with every question (kept separately from history).
-- **Models & connections** — sign-in status, the installed version and location of each program, a **Test** button (sends one tiny question), **Choose location…** if a program is installed somewhere the app does not look, which model writes the final answer, 1 or 2 review rounds, and per-model time limits. If a CLI is a newer minor/major version (or any older version) than the one this app was checked with, a warning says so, and it is repeated under any answer from that model that fails.
+- **My instructions** — who you are and how you like answers, sent with every question (kept separately from history). Until you save your own, it starts with a short description of Ron; the built-in prompt itself no longer describes anyone, so this text is the place to change it.
+- **Models & connections** — sign-in status, the installed version and location of each program, a **Test** button (sends one tiny question), **Choose location…** if a program is installed somewhere the app does not look, which model writes the final answer, 1 or 2 review rounds, how many earlier questions are sent with a new one (none, 1, 3, 5 or 10; they share a fixed length, so more turns make each shorter rather than the prompt longer), and per-model time limits. If a CLI is a newer minor/major version (or any older version) than the one this app was checked with, a warning says so, and it is repeated under any answer from that model that fails.
 - **Voice** — Windows voice, the JARVIS avatar (needs a live avatar conversation in Jarvis: *Command → Avatar*), or off.
 - **History & privacy** — keep or don't keep conversations, delete all, automatic update checks on/off with **Check for updates now**, and a table of exactly what is sent where.
 
@@ -36,8 +36,7 @@ Every link is a **model suggestion that nobody has checked**. Links are marked �
 
 Update checks (installed app only, can be turned off) contact github.com for the release list and the installer; nothing about your questions, answers or settings is sent.
 
-
-When a model is on it receives: your question, your saved instructions, up to three earlier questions and final answers from the same conversation, and — in Review together — the other models' answers and reviews. Claude goes to Anthropic, Codex to OpenAI, Gemini to Google (each through the sign-in already on this PC), local servers stay on this computer. No API keys are used or stored; answers count against your existing plans.
+When a model is on it receives: your question, your saved instructions, the earlier questions and final answers from the same conversation that you chose to send (three by default), and — in Review together — the other models' answers and reviews. Claude goes to Anthropic, Codex to OpenAI, Gemini to Google (each through the sign-in already on this PC), local servers stay on this computer. No API keys are used or stored; answers count against your existing plans.
 
 ## Safety
 
@@ -53,12 +52,22 @@ When a model is on it receives: your question, your saved instructions, up to th
 npm install
 npm start            # run the app
 npm run lint
+npm run typecheck    # TypeScript checks the plain JavaScript (JSDoc types); nothing is compiled
 npm test             # unit tests
+npm run test:coverage  # unit tests with a coverage table for src/core
 npm run test:e2e     # real Electron window with stand-in models
+npm run check        # lint + typecheck + unit + e2e
 npm run test:live    # real Claude + Codex (uses a little quota); add "-- gemini" for Gemini
 npm run dist:win     # installer + portable exe in release\
 node tests/smoke/packaged-smoke.mjs   # packaged app + real Claude/Codex, throwaway data folder
 ```
+
+## Verified on 2026-11-19 (0.3.0 additions)
+
+- Lint clean; type check clean; 30 unit tests (adds Claude stream parsing, the local-server event stream, throttled partial events, the context budget, default instructions, and the runner against a stand-in Codex script and a simulated local server: answer, rate limit, time-out, Stop, not installed); 12 Electron end-to-end tests (adds streaming text turning into the formatted answer, review round progress, and the context setting). Line coverage of `src/core` is 93 %.
+- Live: a real Claude answer streamed through the runner, with the first text after 0.9 s and the full answer after 5.3 s.
+- Electron 45.4.1 and markdown-it 15 pass the hostile-HTML and link tests; markdown-it 15 needed one extra rule (one-word link hosts are refused).
+- The unsigned packaged build still builds; the Artifact Signing and certificate branches of `electron-builder.config.js` produce the expected settings. No signed build has been made.
 
 ## Verified on 2026-11-19 (0.2.0 additions)
 
@@ -88,8 +97,9 @@ Each CLI is looked for in this order: the location you chose in Settings, its us
 - **Gemini (Antigravity)** has no switch that removes all tools; it runs in plan mode, sandboxed, without auto-approval, in an empty folder. It is off by default.
 - **Ollama** is not installed and **LM Studio**'s server is not running, so local models show as unavailable; the adapter (OpenAI-compatible HTTP) was unit-checked, not run against a real server.
 - Links are never verified by the models. **Check link** confirms only that a page responds.
-- Answers are not streamed word by word; each model's answer appears when it is complete.
-- The installer is **not code-signed**, so SmartScreen will warn (also for each update, since electron-updater cannot check a publisher signature on an unsigned build). Installing was not run on this PC, to avoid adding shortcuts that might clash with the other "ron-assistant" build in progress.
-- Context sent to models is limited to the last three questions and answers of a conversation.
+- Only Claude and local servers stream. Codex (`--json`) reports only completed messages and Gemini (`agy --output-format stream-json`) reports only completed steps, so neither can show partial text.
+- Streaming for LM Studio / Ollama was tested against a simulated server only.
+- The installer is **not code-signed yet**, so SmartScreen will warn (also for each update, since electron-updater cannot check a publisher signature on an unsigned build). Signing is wired up for Microsoft Artifact Signing or a certificate but needs an account; see [docs/code-signing.md](docs/code-signing.md). Installing was not run on this PC, to avoid adding shortcuts that might clash with the other "ron-assistant" build in progress.
+- Type checking is deliberately lenient (no strict null checks); it catches wrong option names and API shapes, not every possible mistake.
 
 See [docs/feature-map.md](docs/feature-map.md) for the Jarvis inspection and reuse decisions.

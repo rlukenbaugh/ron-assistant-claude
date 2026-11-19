@@ -23,6 +23,14 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       CSC_LINK: ${{ secrets.CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      # Microsoft Artifact Signing: names are repository variables, the Azure login is secret.
+      ARTIFACT_SIGNING_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+      ARTIFACT_SIGNING_ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+      ARTIFACT_SIGNING_PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+      ARTIFACT_SIGNING_PUBLISHER: ${{ vars.ARTIFACT_SIGNING_PUBLISHER }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -39,13 +47,21 @@ jobs:
         id: signing
         shell: pwsh
         run: |
-          if (-not $env:CSC_LINK -or -not $env:CSC_KEY_PASSWORD) {
-            "enabled=false" >> $env:GITHUB_OUTPUT
-            Write-Warning "CSC_LINK / CSC_KEY_PASSWORD are not configured. The release will be built unsigned."
+          # Same order as electron-builder.config.js: Artifact Signing, then a certificate file, else unsigned.
+          $artifact = $env:ARTIFACT_SIGNING_ENDPOINT -and $env:ARTIFACT_SIGNING_ACCOUNT -and $env:ARTIFACT_SIGNING_PROFILE -and $env:ARTIFACT_SIGNING_PUBLISHER
+          if ($artifact) {
+            if (-not ($env:AZURE_TENANT_ID -and $env:AZURE_CLIENT_ID -and $env:AZURE_CLIENT_SECRET)) { throw "Artifact Signing variables are set but the AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET secrets are missing." }
+            "enabled=true" >> $env:GITHUB_OUTPUT
+            Write-Host "Microsoft Artifact Signing is configured. The release will be signed."
             exit 0
           }
-          "enabled=true" >> $env:GITHUB_OUTPUT
-          Write-Host "Code signing secrets detected. The release will be signed."
+          if ($env:CSC_LINK -and $env:CSC_KEY_PASSWORD) {
+            "enabled=true" >> $env:GITHUB_OUTPUT
+            Write-Host "A code-signing certificate is configured. The release will be signed."
+            exit 0
+          }
+          "enabled=false" >> $env:GITHUB_OUTPUT
+          Write-Warning "No code signing is configured (see docs/code-signing.md). The release will be built unsigned."
 
       - name: Validate tag matches package version
         if: startsWith(github.ref, 'refs/tags/')
@@ -75,7 +91,7 @@ jobs:
       - name: Note unsigned release fallback
         if: steps.signing.outputs.enabled != 'true'
         shell: pwsh
-        run: Write-Host "Release assets were built without Windows code signing because CSC_LINK / CSC_KEY_PASSWORD are not configured."
+        run: Write-Host "Release assets were built without Windows code signing because neither Artifact Signing nor a certificate is configured (see docs/code-signing.md)."
 
       - name: Generate release notes
         shell: pwsh
