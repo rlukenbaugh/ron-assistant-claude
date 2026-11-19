@@ -5,8 +5,12 @@
 const fs = require('node:fs');
 const { AdapterError } = require('./adapters');
 
+/** @typedef {import("./runner").AskOptions} AskOptions */
+
+/** @param {{ logFile?: string }} [opts] */
 function createFakeAsk({ logFile } = {}) {
   const attempts = {};
+  /** @param {string} id @param {string} prompt @param {AskOptions} [opts] */
   return function fakeAsk(id, prompt, { signal, onText } = {}) {
     if (logFile) fs.appendFileSync(logFile, `${JSON.stringify({ id, prompt })}\n`);
     const question = (prompt.match(/THE USER'S QUESTION:\n([\s\S]*?)(\n\n[A-Z ]{6,}|$)/) || [])[1] || '';

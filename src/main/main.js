@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, shell, clipboard, Menu, nativeTheme, session, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, clipboard, ClipboardItem, Menu, nativeTheme, session, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { createStore } = require('../core/store');
@@ -124,6 +124,7 @@ function createWindow() {
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.webContents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: 'deny' }; });
   win.webContents.on('context-menu', (_e, params) => {
+    /** @type {Electron.MenuItemConstructorOptions[]} */
     const items = [];
     if (params.isEditable) items.push({ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { type: 'separator' }, { role: 'selectAll' });
     else if (params.selectionText) items.push({ role: 'copy' }, { type: 'separator' }, { role: 'selectAll' });
@@ -220,8 +221,11 @@ function registerIpc() {
   ipcMain.handle('md:speech', (_e, text) => markdown.toSpeech(text));
   ipcMain.handle('link:open', (_e, url) => openExternal(url));
   ipcMain.handle('link:check', (_e, url) => checkLink(url));
-  ipcMain.handle('clipboard:write', (_e, { text, html }) => {
-    clipboard.write(html ? { text: String(text || ''), html: String(html) } : { text: String(text || '') });
+  ipcMain.handle('clipboard:write', async (_e, { text, html }) => {
+    /** @type {Record<string, string>} */
+    const parts = { 'text/plain': String(text || '') };
+    if (html) parts['text/html'] = String(html);
+    await clipboard.write([new ClipboardItem(parts)]);
     return true;
   });
   ipcMain.handle('clipboard:read', () => clipboard.readText());

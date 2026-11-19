@@ -11,6 +11,16 @@ function killTree(child) {
 }
 
 /** Ask a CLI agent. Resolves with answer text; rejects with AdapterError(code: failed|rate-limited|signin|timeout|cancelled). */
+/**
+ * @typedef {object} AskOptions
+ * @property {AbortSignal} [signal]  Stop button
+ * @property {number} [timeoutSec]
+ * @property {string} [model]
+ * @property {string} [cwd]  empty working folder for CLI agents
+ * @property {(textSoFar: string) => void} [onText]  partial answer while it is being written
+ */
+
+/** @param {string} id @param {string} prompt @param {AskOptions} [opts] @returns {Promise<string>} */
 function runCli(id, prompt, { signal, timeoutSec = 180, model = '', cwd, onText } = {}) {
   const provider = getProvider(id);
   checkedPrompt(prompt);
@@ -68,6 +78,7 @@ function summarizeError(name, text, exitCode) {
 }
 
 /** Ask a local OpenAI-compatible server (LM Studio / Ollama). */
+/** @param {string} id @param {string} prompt @param {AskOptions & { fetchImpl?: typeof fetch }} [opts] */
 async function runHttp(id, prompt, { signal, timeoutSec = 180, model = '', fetchImpl = fetch, onText } = {}) {
   const provider = getProvider(id);
   checkedPrompt(prompt);

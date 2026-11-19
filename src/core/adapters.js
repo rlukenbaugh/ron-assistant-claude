@@ -173,6 +173,7 @@ function locate(id, source = process.env) {
 }
 
 /** Concrete spawn spec for a CLI provider. */
+/** @param {string} id @param {{ model?: string, timeoutSec?: number, nodePath?: string }} [opts] */
 function spawnSpec(id, { model = '', timeoutSec = 180, nodePath } = {}) {
   const p = getProvider(id);
   if (p.kind !== 'cli') throw new AdapterError('failed', `${p.name} is not a command-line agent.`);

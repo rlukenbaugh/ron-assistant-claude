@@ -21,6 +21,7 @@ async function readKey(file = envPath()) {
   return m[1].replace(/^(['"])(.*)\1$/, '$2');
 }
 
+/** @param {string} route @param {object|null} body @param {{ fetchImpl?: typeof fetch, keyFile?: string, timeoutMs?: number }} [opts] */
 async function request(route, body, { fetchImpl = fetch, keyFile, timeoutMs = 10000 } = {}) {
   let key;
   try { key = await readKey(keyFile); } catch (e) { throw new Error(e.code === 'ENOENT' ? 'Jarvis is not set up on this computer.' : e.message, { cause: e }); }

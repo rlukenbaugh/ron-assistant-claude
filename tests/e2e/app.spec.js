@@ -37,7 +37,15 @@ async function askQuestion(page, text) {
 async function clipboardText(app) { return app.evaluate(({ clipboard }) => clipboard.readText()); }
 // The Windows clipboard is shared with every other program, so record what the app writes too.
 async function recordCopies(app) {
-  await app.evaluate(({ clipboard }) => { global.__clips = []; const write = clipboard.write.bind(clipboard); clipboard.write = (d) => { global.__clips.push(d.text); return write(d); }; });
+  // The app writes a list of ClipboardItems (Electron's current clipboard API); keep each item's plain text.
+  await app.evaluate(({ clipboard }) => {
+    global.__clips = [];
+    const write = clipboard.write.bind(clipboard);
+    clipboard.write = (items) => {
+      global.__clips.push(items[0].getType('text/plain').then((b) => b.text()));
+      return write(items);
+    };
+  });
 }
 async function lastCopy(app) { return app.evaluate(() => global.__clips.at(-1)); }
 

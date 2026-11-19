@@ -13,6 +13,9 @@ function safeUrl(raw) {
     const u = new URL(href);
     if (!['http:', 'https:', 'mailto:'].includes(u.protocol)) return null;
     if (u.username || u.password) return null; // user:pass@host links are a common disguise
+    // A one-word host ("https://user/") is never a real site a model should point to; it also
+    // appears when auto-linking picks up the leftover text of a link that was blocked above.
+    if (u.protocol !== 'mailto:' && u.hostname !== 'localhost' && !u.hostname.startsWith('[') && !u.hostname.includes('.')) return null;
     return u.href;
   } catch { return null; }
 }
@@ -38,7 +41,7 @@ md.renderer.rules.image = (tokens, idx) => {
   return src ? `<span class="image-placeholder">[Image not loaded: ${alt}] <a href="${esc(src)}" class="ext-link" data-href="${esc(src)}" title="Suggested by the model · not checked">${esc(src)}<span class="link-flag" aria-hidden="true">↗</span></a></span>` : `<span class="image-placeholder">[Image: ${alt}]</span>`;
 };
 const defaultTable = md.renderer.rules.table_open || ((tokens, idx, opts, env, self) => self.renderToken(tokens, idx, opts));
-md.renderer.rules.table_open = (...args) => `<div class="table-wrap">${defaultTable(...args)}`;
+md.renderer.rules.table_open = (tokens, idx, opts, env, self) => `<div class="table-wrap">${defaultTable(tokens, idx, opts, env, self)}`;
 md.renderer.rules.table_close = () => '</table></div>';
 md.renderer.rules.fence = (tokens, idx) => {
   const t = tokens[idx];

@@ -173,6 +173,7 @@ export async function renderRun(run) {
 export function onPartial({ runId, key, text }) {
   const k = `${runId}|${key}`;
   state.partials.set(k, text);
+  /** @type {HTMLElement | null} */
   const el = document.querySelector(`[data-stream="${CSS.escape(k)}"]`);
   if (el) { el.textContent = text; el.hidden = false; }
 }
