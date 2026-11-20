@@ -24,7 +24,8 @@ export function renderConnections() {
       h('span', { class: 'detail' }, `${p.vendor}. ${c.detail}`,
         c.version ? h('span', { class: 'block', text: `Version ${c.version}${c.testedVersion && c.testedVersion !== c.version ? ` (checked with ${c.testedVersion})` : ''}` }) : null,
         c.path ? h('span', { class: 'block path', text: `${state.settings.paths?.[p.id] ? 'Location (chosen by you)' : 'Location'}: ${c.path}` }) : null,
-        c.warning ? h('span', { class: 'block warning', role: 'note', text: c.warning }) : null),
+        c.warning ? h('span', { class: 'block warning', role: 'note', text: c.warning }) : null,
+        p.id === 'hermes' ? hermesModelFields() : null),
       h('span', { class: 'actions' },
         p.kind === 'cli' ? h('button', { type: 'button', class: 'btn btn-small', text: 'Choose location…', title: `Pick the ${p.name} program if it is installed somewhere this app does not look`, onclick: () => choosePath(p.id) }) : null,
         p.kind === 'cli' && state.settings.paths?.[p.id] ? h('button', { type: 'button', class: 'btn btn-small', text: 'Use automatic location', onclick: () => resetPath(p.id) }) : null,
@@ -37,6 +38,17 @@ export function renderConnections() {
   const sel = $('#final-model');
   sel.replaceChildren(h('option', { value: 'auto', text: 'Automatic (first model that answered)' }), ...state.providers.filter((p) => usable(p.id)).map((p) => h('option', { value: p.id, text: p.name })));
   sel.value = state.settings.finalModel;
+}
+
+/** Hermes in safe mode needs its model named; empty fields mean "use the one saved in Hermes". */
+function hermesModelFields() {
+  const cur = state.settings.models?.hermes || {};
+  const save = () => saveSettings({ models: { ...state.settings.models, hermes: { provider: $('#hermes-provider').value.trim(), model: $('#hermes-model').value.trim() } } });
+  const field = (id, label, value, placeholder) => h('label', { class: 'block small' }, `${label} `,
+    h('input', { id, type: 'text', value: value || '', placeholder, spellcheck: 'false', onchange: save }));
+  return h('span', { class: 'block' },
+    field('hermes-provider', 'Provider', cur.provider, 'from Hermes settings (e.g. nous)'),
+    field('hermes-model', 'Model', cur.model, 'from Hermes settings (e.g. openai/gpt-6-astra)'));
 }
 
 async function choosePath(id) {

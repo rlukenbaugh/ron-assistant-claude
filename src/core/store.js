@@ -41,7 +41,10 @@ function mergeSettings(saved) {
   // Only models this version knows (Gemini was removed in 0.3.1; an old saved switch is dropped).
   s.enabled = { ...DEFAULT_SETTINGS.enabled, ...Object.fromEntries(Object.entries(saved?.enabled || {}).filter(([id]) => id in DEFAULT_SETTINGS.enabled)) };
   s.speech = { ...DEFAULT_SETTINGS.speech, ...(saved?.speech || {}) };
-  s.models = { ...(saved?.models || {}) };
+  // provider id → { model, provider } typed in Settings; only short plain strings are kept.
+  const clean = (v) => (typeof v === 'string' ? v.trim().slice(0, 200) : '');
+  s.models = Object.fromEntries(Object.entries(saved?.models || {}).filter(([, v]) => v && typeof v === 'object')
+    .map(([id, v]) => [id, { model: clean(v.model), provider: clean(v.provider) }]));
   s.paths = Object.fromEntries(Object.entries(saved?.paths || {}).filter(([id, v]) => PROVIDERS.some((p) => p.id === id && p.kind === 'cli') && typeof v === 'string' && v.trim()));
   s.autoUpdate = s.autoUpdate !== false;
   s.fontSize = Math.min(28, Math.max(14, Number(s.fontSize) || 18));

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSpec, childEnvironment, getProvider, classifyFailure, checkedPrompt } = require('../../src/core/adapters');
+const { spawnSpec, childEnvironment, getProvider, classifyFailure, checkedPrompt, parseHermesModel, hermesSavedModel } = require('../../src/core/adapters');
 const { createOrchestrator } = require('../../src/core/orchestrator');
 const { render, extractLinks, toPlainText, toSpeech, safeUrl } = require('../../src/core/markdown');
 const { createStore } = require('../../src/core/store');
@@ -309,4 +309,34 @@ test('the built-in prompt no longer describes Ron; the default saved instruction
   assert.equal(mergeSettings({}).contextTurns, 3);
   assert.equal(mergeSettings({ contextTurns: 0 }).contextTurns, 0);
   assert.equal(mergeSettings({ contextTurns: 50 }).contextTurns, 10);
+});
+
+test('Hermes gets its saved provider and model explicitly, since --safe-mode ignores its config', () => {
+  assert.deepEqual(parseHermesModel('model:\n  default: "openai/gpt-6-astra"  # main\n  provider: nous\nagent:\n  provider: other\n'), { model: 'openai/gpt-6-astra', provider: 'nous' });
+  assert.deepEqual(parseHermesModel("model: 'hermes-4'\n"), { model: 'hermes-4' });
+  assert.deepEqual(parseHermesModel('agent:\n  x: 1\n'), {});
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-'));
+  fs.writeFileSync(path.join(dir, 'config.yaml'), 'model:\n  provider: nous\n  default: openai/gpt-6-astra\n');
+  const old = process.env.HERMES_HOME;
+  process.env.HERMES_HOME = dir;
+  try {
+    assert.deepEqual(hermesSavedModel(), { provider: 'nous', model: 'openai/gpt-6-astra' });
+    const args = spawnSpec('hermes').args;
+    assert.ok(args.includes('--safe-mode'));
+    assert.equal(args[args.indexOf('--provider') + 1], 'nous');
+    assert.equal(args[args.indexOf('--model') + 1], 'openai/gpt-6-astra');
+    const chosen = spawnSpec('hermes', { model: 'other/model' }).args;
+    assert.equal(chosen[chosen.indexOf('--model') + 1], 'other/model');
+    assert.ok(!chosen.includes('--provider'), 'a typed model is not paired with an unrelated saved provider');
+    const typed = spawnSpec('hermes', { model: 'm', provider: 'openrouter' }).args;
+    assert.equal(typed[typed.indexOf('--provider') + 1], 'openrouter');
+    // An active profile's config wins over the main one.
+    fs.mkdirSync(path.join(dir, 'profiles', 'work'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'profiles', 'work', 'config.yaml'), 'model:\n  provider: openrouter\n  default: x/y\n');
+    fs.writeFileSync(path.join(dir, 'active_profile'), 'work\n');
+    assert.deepEqual(hermesSavedModel(), { provider: 'openrouter', model: 'x/y' });
+  } finally { if (old === undefined) delete process.env.HERMES_HOME; else process.env.HERMES_HOME = old; }
+  assert.throws(() => getProvider('hermes').parse('Error: no model configured; pass --model explicitly'), /needs a model/);
+  assert.equal(getProvider('hermes').parse('Session: local-214dbabbd\r\nCONNECTED\r\n'), 'CONNECTED');
+  assert.equal(getProvider('hermes').parse('Line one\nLine two\n\nsession_id: abc\n'), 'Line one\nLine two');
 });

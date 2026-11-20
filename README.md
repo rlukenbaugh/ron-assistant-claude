@@ -6,7 +6,7 @@ It is separate from Jarvis: its own program folder, its own data in `%APPDATA%\r
 
 ## Install
 
-Run `Ron-Assistant-Setup-0.3.1-x64.exe` (from `release\` or the GitHub release). Until code signing is set up ([docs/code-signing.md](docs/code-signing.md)), Windows shows a SmartScreen warning: choose **More info → Run anyway**. A portable `.exe` that needs no installation is also built.
+Run `Ron-Assistant-Setup-0.3.2-x64.exe` (from `release\` or the GitHub release). Until code signing is set up ([docs/code-signing.md](docs/code-signing.md)), Windows shows a SmartScreen warning: choose **More info → Run anyway**. A portable `.exe` that needs no installation is also built.
 
 The installed app **updates itself**: it checks GitHub Releases at start-up and every six hours, downloads a new version in the background, and installs it when you close the app (or at once with **Restart now** on the banner). The portable `.exe` does not update itself. Versions before 0.2.0 have no updater, so install 0.2.0 by hand once.
 
@@ -62,6 +62,10 @@ npm run dist:win     # installer + portable exe in release\
 node tests/smoke/packaged-smoke.mjs   # packaged app + real Claude/Codex, throwaway data folder
 ```
 
+## Verified on 2026-11-20 (0.3.2)
+
+- Hermes fixed: under `--safe-mode` Hermes 0.22 ignores its saved config and refused to run without `--model`. The provider and model saved in Hermes (main config or active profile) are now passed explicitly, and can be typed under Settings → Models & connections → Hermes. The answer is kept when Hermes prints its `Session:` line first. Confirmed on the owner's PC: Hermes shows Ready (Nous, `openai/gpt-6-astra`).
+
 ## Verified on 2026-11-20 (0.3.1)
 
 - Gemini (Antigravity) removed. A Gemini switch saved by an older version is dropped when settings load. Lint, typecheck, 30 unit tests and 12 end-to-end tests pass.
@@ -97,7 +101,7 @@ Each CLI is looked for in this order: the location you chose in Settings, its us
 ## Known limitations
 
 - **JARVIS avatar speech was not played live in testing.** The route is the one the bridge verified earlier, and failure handling was tested, but speaking through the avatar needs a live avatar conversation (Command → Avatar) and uses Jarvis Cloud avatar minutes. Jarvis accepting text does not prove sound played, and **Stop speaking** cannot interrupt the avatar once it has the text.
-- **Hermes** is installed but not signed in (`hermes model`), so its adapter is untested and off by default. Its `--safe-mode` disables plugins and MCP, but Hermes has no verified "no tools" switch.
+- **Hermes** answers through the provider and model saved in Hermes (or typed in Settings) and is off by default. Its `--safe-mode` disables plugins and MCP, but Hermes has no verified "no tools" switch.
 - **Ollama** is not installed and **LM Studio**'s server is not running, so local models show as unavailable; the adapter (OpenAI-compatible HTTP) was unit-checked, not run against a real server.
 - Links are never verified by the models. **Check link** confirms only that a page responds.
 - Only Claude and local servers stream. Codex (`--json`) reports only completed messages and Hermes prints its answer when finished, so neither can show partial text.
