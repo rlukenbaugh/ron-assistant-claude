@@ -1,7 +1,7 @@
 {
   "name": "ron-assistant-claude",
   "productName": "Ron Assistant",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "description": "Ask Claude, Codex and other configured models at once, compare or let them review each other, and hear the final answer.",
   "main": "src/main/main.js",

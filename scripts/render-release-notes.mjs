@@ -13,6 +13,7 @@ const notes = `# Ron Assistant v${version}
 
 ## Highlights
 - Ask Claude Code, Codex, and Hermes Agent at once using the sign-ins already on your PC, plus local LM Studio or Ollama models.
+- 0.3.2: Hermes works again with newer Hermes versions (provider and model are passed explicitly; both can be set in Settings).
 - 0.3.1: Gemini (Antigravity) has been removed.
 - **Compare** shows each model's answer side by side; **Review together** has them review one another and writes one final answer that keeps real disagreements visible.
 - Claude's answers (and local LM Studio / Ollama models) appear word by word as they are written.
