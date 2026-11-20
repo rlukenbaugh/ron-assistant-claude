@@ -67,17 +67,19 @@ const PROVIDERS = [
     defaultPath: () => path.join(localAppData(), 'hermes', 'bin', 'hermes.exe'), pathNames: ['hermes.exe'], testedVersion: '0.22.7',
     // --safe-mode skips Hermes's saved config, and newer Hermes then refuses to run without
     // "--model". So the provider and model saved in Hermes (or a model chosen here) are passed explicitly.
-    args: ({ model = '' } = {}) => {
-      const saved = hermesSavedModel();
+    // Settings → Models & connections can name both when Hermes keeps them somewhere unexpected.
+    args: ({ model = '', provider = '' } = {}) => {
+      const saved = model ? { provider } : hermesSavedModel();
+      const chosenProvider = provider || saved.provider;
       const chosen = model || saved.model;
       return ['chat', '--query-file', '-', '-Q', '--safe-mode', '--ignore-rules', '--max-turns', '1',
-        ...(saved.provider && saved.provider !== 'auto' ? ['--provider', saved.provider] : []), ...(chosen ? ['--model', chosen] : [])];
+        ...(chosenProvider && chosenProvider !== 'auto' ? ['--provider', chosenProvider] : []), ...(chosen ? ['--model', chosen] : [])];
     },
     statusArgs: null, // Hermes has no quota-free sign-in check; "Test" sends a tiny question.
     parse: (stdout) => {
       const text = stdout.replace(/\n?(session[_ ]id|Session:).*$/is, '').trim();
       if (!text) throw new AdapterError('failed', 'Hermes returned no answer.');
-      if (/pass --model/i.test(text)) throw new AdapterError('failed', 'Hermes needs a model. Choose one with: hermes model');
+      if (/pass --model/i.test(text)) throw new AdapterError('failed', 'Hermes needs a model. Type its provider and model under Settings → Models & connections → Hermes, or choose one with: hermes model');
       if (/no access token|re-authenticate|hermes model/i.test(text)) throw new AdapterError('signin', 'Hermes is not signed in. Run: hermes model');
       return text;
     },
@@ -92,11 +94,17 @@ const PROVIDERS = [
   },
 ];
 
-/** Hermes's config file locations, most specific first. */
+/** Hermes's config file locations, most specific first (an active profile's own config before the main one). */
 function hermesConfigPaths(source = process.env) {
   const home = os.homedir();
-  return [...new Set([source.HERMES_HOME && path.join(source.HERMES_HOME, 'config.yaml'), path.join(home, '.hermes', 'config.yaml'),
-    path.join(source.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'hermes', 'config.yaml')].filter(Boolean))];
+  const roots = [...new Set([source.HERMES_HOME, path.join(home, '.hermes'), path.join(source.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'hermes')].filter(Boolean))];
+  const files = [];
+  for (const root of roots) {
+    let active = ''; try { active = fs.readFileSync(path.join(root, 'active_profile'), 'utf8').trim(); } catch { /* no profiles */ }
+    if (active && active !== 'default' && !/[\\/]/.test(active)) files.push(path.join(root, 'profiles', active, 'config.yaml'));
+    files.push(path.join(root, 'config.yaml'));
+  }
+  return files;
 }
 
 /**
@@ -107,7 +115,8 @@ function hermesConfigPaths(source = process.env) {
 function hermesSavedModel(source = process.env) {
   for (const file of hermesConfigPaths(source)) {
     let text; try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
-    return parseHermesModel(text);
+    const found = parseHermesModel(text);
+    if (found.model) return found;
   }
   return {};
 }
@@ -204,11 +213,11 @@ function locate(id, source = process.env) {
 }
 
 /** Concrete spawn spec for a CLI provider. */
-/** @param {string} id @param {{ model?: string, nodePath?: string }} [opts] */
-function spawnSpec(id, { model = '', nodePath } = {}) {
+/** @param {string} id @param {{ model?: string, provider?: string, nodePath?: string }} [opts] */
+function spawnSpec(id, { model = '', provider = '', nodePath } = {}) {
   const p = getProvider(id);
   if (p.kind !== 'cli') throw new AdapterError('failed', `${p.name} is not a command-line agent.`);
-  const args = p.args({ model });
+  const args = p.args({ model, provider });
   const file = locate(id) || p.defaultPath();
   if (p.runsOnNode) return { command: nodePath || resolveNode(), args: [file, ...args] };
   return { command: file, args };

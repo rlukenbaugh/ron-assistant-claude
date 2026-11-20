@@ -327,6 +327,14 @@ test('Hermes gets its saved provider and model explicitly, since --safe-mode ign
     assert.equal(args[args.indexOf('--model') + 1], 'openai/gpt-6-astra');
     const chosen = spawnSpec('hermes', { model: 'other/model' }).args;
     assert.equal(chosen[chosen.indexOf('--model') + 1], 'other/model');
+    assert.ok(!chosen.includes('--provider'), 'a typed model is not paired with an unrelated saved provider');
+    const typed = spawnSpec('hermes', { model: 'm', provider: 'openrouter' }).args;
+    assert.equal(typed[typed.indexOf('--provider') + 1], 'openrouter');
+    // An active profile's config wins over the main one.
+    fs.mkdirSync(path.join(dir, 'profiles', 'work'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'profiles', 'work', 'config.yaml'), 'model:\n  provider: openrouter\n  default: x/y\n');
+    fs.writeFileSync(path.join(dir, 'active_profile'), 'work\n');
+    assert.deepEqual(hermesSavedModel(), { provider: 'openrouter', model: 'x/y' });
   } finally { if (old === undefined) delete process.env.HERMES_HOME; else process.env.HERMES_HOME = old; }
   assert.throws(() => getProvider('hermes').parse('Error: no model configured; pass --model explicitly'), /needs a model/);
 });

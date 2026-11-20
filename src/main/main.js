@@ -195,7 +195,8 @@ function registerIpc() {
   ipcMain.handle('connections:test', async (_e, id) => {
     const started = Date.now();
     try {
-      const text = await ask(id, 'Reply with exactly: CONNECTED', { timeoutSec: 120, cwd: path.join(dataDir, 'work') });
+      const chosen = store.getSettings().models?.[id] || {};
+      const text = await ask(id, 'Reply with exactly: CONNECTED', { timeoutSec: 120, model: chosen.model || '', provider: chosen.provider || '', cwd: path.join(dataDir, 'work') });
       return { state: 'ready', detail: `Answered in ${Math.round((Date.now() - started) / 1000)} s${/CONNECTED/.test(text) ? '' : ' (unexpected wording)'}.` };
     } catch (e) { return { state: e.code === 'signin' ? 'signin' : e.code === 'rate-limited' ? 'rate-limited' : 'unavailable', detail: e.message }; }
   });

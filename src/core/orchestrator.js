@@ -50,7 +50,7 @@ function createOrchestrator({ ask, emit = () => {} }) {
     slot.state = 'running'; slot.error = ''; slot.code = '';
     update(run, {});
     try {
-      const text = await ask(id, prompt, { signal: controller.signal, timeoutSec: settings.timeoutSec || 180, model: settings.models?.[id]?.model || '', cwd: settings.workDir, onText: key ? partialSender(run, key) : undefined });
+      const text = await ask(id, prompt, { signal: controller.signal, timeoutSec: settings.timeoutSec || 180, model: settings.models?.[id]?.model || '', provider: settings.models?.[id]?.provider || '', cwd: settings.workDir, onText: key ? partialSender(run, key) : undefined });
       Object.assign(slot, { state: 'done', text, ms: now() - started });
       return text;
     } catch (e) {

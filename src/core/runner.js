@@ -16,16 +16,17 @@ function killTree(child) {
  * @property {AbortSignal} [signal]  Stop button
  * @property {number} [timeoutSec]
  * @property {string} [model]
+ * @property {string} [provider]  Hermes only: the provider its model comes from
  * @property {string} [cwd]  empty working folder for CLI agents
  * @property {(textSoFar: string) => void} [onText]  partial answer while it is being written
  */
 
 /** @param {string} id @param {string} prompt @param {AskOptions} [opts] @returns {Promise<string>} */
-function runCli(id, prompt, { signal, timeoutSec = 180, model = '', cwd, onText } = {}) {
+function runCli(id, prompt, { signal, timeoutSec = 180, model = '', provider: modelProvider = '', cwd, onText } = {}) {
   const provider = getProvider(id);
   checkedPrompt(prompt);
   if (!installedPath(id)) return Promise.reject(new AdapterError('missing', `${provider.name} is not installed on this computer.`));
-  const spec = spawnSpec(id, { model });
+  const spec = spawnSpec(id, { model, provider: modelProvider });
   if (cwd) fs.mkdirSync(cwd, { recursive: true });
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new AdapterError('cancelled', 'Stopped.'));
