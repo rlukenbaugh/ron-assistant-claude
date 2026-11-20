@@ -65,11 +65,19 @@ const PROVIDERS = [
     id: 'hermes', name: 'Hermes', vendor: 'Nous · Hermes Agent', kind: 'cli', defaultEnabled: false,
     destination: 'The provider configured in Hermes (Nous Portal by default)',
     defaultPath: () => path.join(localAppData(), 'hermes', 'bin', 'hermes.exe'), pathNames: ['hermes.exe'], testedVersion: '0.22.7',
-    args: () => ['chat', '--query-file', '-', '-Q', '--safe-mode', '--ignore-rules', '--max-turns', '1'],
+    // --safe-mode skips Hermes's saved config, and newer Hermes then refuses to run without
+    // "--model". So the provider and model saved in Hermes (or a model chosen here) are passed explicitly.
+    args: ({ model = '' } = {}) => {
+      const saved = hermesSavedModel();
+      const chosen = model || saved.model;
+      return ['chat', '--query-file', '-', '-Q', '--safe-mode', '--ignore-rules', '--max-turns', '1',
+        ...(saved.provider && saved.provider !== 'auto' ? ['--provider', saved.provider] : []), ...(chosen ? ['--model', chosen] : [])];
+    },
     statusArgs: null, // Hermes has no quota-free sign-in check; "Test" sends a tiny question.
     parse: (stdout) => {
       const text = stdout.replace(/\n?(session[_ ]id|Session:).*$/is, '').trim();
       if (!text) throw new AdapterError('failed', 'Hermes returned no answer.');
+      if (/pass --model/i.test(text)) throw new AdapterError('failed', 'Hermes needs a model. Choose one with: hermes model');
       if (/no access token|re-authenticate|hermes model/i.test(text)) throw new AdapterError('signin', 'Hermes is not signed in. Run: hermes model');
       return text;
     },
@@ -83,6 +91,45 @@ const PROVIDERS = [
     destination: 'Stays on this computer (Ollama)', baseUrl: 'http://127.0.0.1:11434/v1',
   },
 ];
+
+/** Hermes's config file locations, most specific first. */
+function hermesConfigPaths(source = process.env) {
+  const home = os.homedir();
+  return [...new Set([source.HERMES_HOME && path.join(source.HERMES_HOME, 'config.yaml'), path.join(home, '.hermes', 'config.yaml'),
+    path.join(source.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'hermes', 'config.yaml')].filter(Boolean))];
+}
+
+/**
+ * The provider and model saved in Hermes's config.yaml ("model: { provider, default }", or the
+ * older "model: name"). Read with a small line parser so no YAML library is needed.
+ * @returns {{ provider?: string, model?: string }}
+ */
+function hermesSavedModel(source = process.env) {
+  for (const file of hermesConfigPaths(source)) {
+    let text; try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
+    return parseHermesModel(text);
+  }
+  return {};
+}
+
+function parseHermesModel(text) {
+  const unquote = (v) => String(v).replace(/\s+#.*$/, '').trim().replace(/^(['"])(.*)\1$/, '$2').trim();
+  const lines = String(text || '').split(/\r?\n/);
+  const i = lines.findIndex((l) => /^model\s*:/.test(l));
+  if (i < 0) return {};
+  const inline = unquote(lines[i].replace(/^model\s*:/, ''));
+  if (inline) return { model: inline };
+  const out = {};
+  for (const l of lines.slice(i + 1)) {
+    if (/^\S/.test(l)) break; // next top-level key
+    const m = l.match(/^\s+(default|model|provider)\s*:\s*(.*)$/);
+    if (!m) continue;
+    const v = unquote(m[2]);
+    if (!v) continue;
+    if (m[1] === 'provider') out.provider = v; else out.model ??= v;
+  }
+  return out;
+}
 
 /** Every output line that is a JSON object; other lines are ignored. SyntaxError when there is none. */
 function jsonLines(stdout) {
@@ -213,5 +260,5 @@ function checkedAnswer(text) {
 
 module.exports = {
   PROVIDERS, AdapterError, classifyFailure, childEnvironment, getProvider, spawnSpec, commandSpec, installedPath, locate, candidatePaths,
-  setPathOverrides, parseVersion, compareVersions, versionNote, checkedPrompt, checkedAnswer, MAX_PROMPT,
+  setPathOverrides, hermesSavedModel, parseHermesModel, parseVersion, compareVersions, versionNote, checkedPrompt, checkedAnswer, MAX_PROMPT,
 };
