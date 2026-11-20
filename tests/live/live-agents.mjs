@@ -1,6 +1,5 @@
 // Real integration check against the signed-in CLIs on this computer. Uses a little plan quota.
 //   npm run test:live              Claude + Codex (connection check, Compare, Review together)
-//   npm run test:live -- gemini    also include Gemini (Antigravity)
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -10,7 +9,7 @@ const require = createRequire(import.meta.url);
 const runner = require('../../src/core/runner.js');
 const { createOrchestrator } = require('../../src/core/orchestrator.js');
 
-const models = ['claude', 'codex', ...(process.argv.includes('gemini') ? ['gemini'] : [])];
+const models = ['claude', 'codex'];
 const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ron-assistant-live-'));
 const settings = { instructions: 'Keep answers under 80 words.', timeoutSec: 240, reviewRounds: 1, finalModel: 'auto', workDir };
 const results = [];

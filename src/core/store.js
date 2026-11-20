@@ -38,7 +38,8 @@ function readJson(file, fallback) {
 
 function mergeSettings(saved) {
   const s = { ...DEFAULT_SETTINGS, ...(saved || {}) };
-  s.enabled = { ...DEFAULT_SETTINGS.enabled, ...(saved?.enabled || {}) };
+  // Only models this version knows (Gemini was removed in 0.3.1; an old saved switch is dropped).
+  s.enabled = { ...DEFAULT_SETTINGS.enabled, ...Object.fromEntries(Object.entries(saved?.enabled || {}).filter(([id]) => id in DEFAULT_SETTINGS.enabled)) };
   s.speech = { ...DEFAULT_SETTINGS.speech, ...(saved?.speech || {}) };
   s.models = { ...(saved?.models || {}) };
   s.paths = Object.fromEntries(Object.entries(saved?.paths || {}).filter(([id, v]) => PROVIDERS.some((p) => p.id === id && p.kind === 'cli') && typeof v === 'string' && v.trim()));

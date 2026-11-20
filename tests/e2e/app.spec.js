@@ -24,7 +24,7 @@ async function launch(dataDir, extraEnv = {}) {
 function calls(log) { return fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []; }
 function tmpDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'ron-assistant-e2e-')); }
 async function setModels(page, on) {
-  for (const id of ['claude', 'codex', 'gemini']) {
+  for (const id of ['claude', 'codex', 'hermes']) {
     const chip = page.locator(`.chip[data-model="${id}"]`);
     if ((await chip.getAttribute('aria-pressed') === 'true') !== on.includes(id)) await chip.click();
     await expect(chip).toHaveAttribute('aria-pressed', String(on.includes(id)));
@@ -93,12 +93,12 @@ test('review mode: both models get the question, answer, review once each, and o
 
 test('compare mode shows independent answers side by side without a final answer or speech', async () => {
   const { app, page, log } = await launch(tmpDir());
-  await setModels(page, ['claude', 'codex', 'gemini']);
+  await setModels(page, ['claude', 'codex', 'hermes']);
   await page.locator('.mode-switch [data-mode="compare"]').click();
   await askQuestion(page, 'Compare this');
   const run = page.locator('article.run').last();
   await expect(run.locator('.grid .model-col')).toHaveCount(3);
-  await expect(run.locator('.grid [data-model-panel="gemini"] .answer')).toContainText('Answer from gemini', { timeout: 15000 });
+  await expect(run.locator('.grid [data-model-panel="hermes"] .answer')).toContainText('Answer from hermes', { timeout: 15000 });
   await expect(run.locator('.final')).toHaveCount(0);
   expect(await run.evaluate((el) => [...el.childNodes].filter((n) => n.nodeType === 3).length)).toBe(0); // no stray text such as "null"
   // Side by side whenever there is room for three 290 px columns; CI screens can be too small
@@ -260,7 +260,7 @@ test('settings, instructions and history survive a full restart; history can be 
   expect(fontSize).toBe('20px');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(page.locator('.mode-switch [data-mode="compare"]')).toHaveAttribute('aria-checked', 'true');
-  await expect(page.locator('.chip[data-model="gemini"]')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('.chip[data-model="hermes"]')).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#history-list li')).toHaveCount(1);
   await page.locator('#btn-settings').click();
   await expect(page.locator('#instructions')).toHaveValue('Always answer in plain English.\nI use Windows 11.');

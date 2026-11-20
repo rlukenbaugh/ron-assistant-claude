@@ -11,7 +11,7 @@ const exe = path.join(root, 'release', 'win-unpacked', 'Ron Assistant.exe');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ron-assistant-smoke-'));
 const shots = path.join(root, 'test-results', 'screens');
 fs.mkdirSync(shots, { recursive: true });
-fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ mode: 'review', enabled: { claude: true, codex: true, gemini: false }, speech: { output: 'windows', autoSpeak: true, muted: true } }));
+fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ mode: 'review', enabled: { claude: true, codex: true, hermes: false }, speech: { output: 'windows', autoSpeak: true, muted: true } }));
 
 const app = await electron.launch({ executablePath: exe, env: { ...process.env, RON_ASSISTANT_DATA_DIR: dataDir } });
 const page = await app.firstWindow();

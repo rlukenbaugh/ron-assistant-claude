@@ -12,7 +12,8 @@ const notes = `# Ron Assistant v${version}
 - **Portable:** \`Ron-Assistant-Portable-${version}-x64.exe\` (no installation and no automatic updates; settings still live in %APPDATA%\\ron-assistant-claude)
 
 ## Highlights
-- Ask Claude Code, Codex, and Gemini (Antigravity) at once using the sign-ins already on your PC.
+- Ask Claude Code, Codex, and Hermes Agent at once using the sign-ins already on your PC, plus local LM Studio or Ollama models.
+- 0.3.1: Gemini (Antigravity) has been removed.
 - **Compare** shows each model's answer side by side; **Review together** has them review one another and writes one final answer that keeps real disagreements visible.
 - Claude's answers (and local LM Studio / Ollama models) appear word by word as they are written.
 - The installed app updates itself from GitHub Releases (can be turned off in Settings).

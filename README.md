@@ -1,12 +1,12 @@
 # Ron Assistant
 
-A personal Windows 11 app that sends one question to every model you turn on — Claude, Codex, Gemini, and any local model server — then either shows the answers side by side (**Compare**) or lets the models review one another and write one final answer (**Review together**). The final answer can be spoken by a Windows voice or the JARVIS avatar.
+A personal Windows 11 app that sends one question to every model you turn on — Claude, Codex, Hermes Agent, and any local model server — then either shows the answers side by side (**Compare**) or lets the models review one another and write one final answer (**Review together**). The final answer can be spoken by a Windows voice or the JARVIS avatar.
 
 It is separate from Jarvis: its own program folder, its own data in `%APPDATA%\ron-assistant-claude`, no network ports, no background service. Your Jarvis installation is not changed.
 
 ## Install
 
-Run `Ron-Assistant-Setup-0.3.0-x64.exe` (from `release\` or the GitHub release). Until code signing is set up ([docs/code-signing.md](docs/code-signing.md)), Windows shows a SmartScreen warning: choose **More info → Run anyway**. A portable `.exe` that needs no installation is also built.
+Run `Ron-Assistant-Setup-0.3.1-x64.exe` (from `release\` or the GitHub release). Until code signing is set up ([docs/code-signing.md](docs/code-signing.md)), Windows shows a SmartScreen warning: choose **More info → Run anyway**. A portable `.exe` that needs no installation is also built.
 
 The installed app **updates itself**: it checks GitHub Releases at start-up and every six hours, downloads a new version in the background, and installs it when you close the app (or at once with **Restart now** on the banner). The portable `.exe` does not update itself. Versions before 0.2.0 have no updater, so install 0.2.0 by hand once.
 
@@ -15,7 +15,7 @@ The installed app **updates itself**: it checks GitHub Releases at start-up and 
 1. **Pick models** with the chips at the top. A green dot means signed in and ready; amber means it may need a sign-in; red means not installed or not running.
 2. **Pick a mode**: *Compare* (each model answers on its own) or *Review together* (answers → each model reviews the others once → one model writes the final answer).
 3. **Type or paste** your question and press **Ask** or **Ctrl+Enter**.
-4. Read the **Final answer** panel. Each model's own answer is in the tabs below it (or **Show side by side**). Open **Review discussion** to see who said what. Claude's text (and that of local LM Studio / Ollama models) appears word by word as it is written and is formatted when complete; Codex and Gemini do not report partial text, so their answers appear when finished. The progress line shows each review round (for example *Review round 1 of 2: 2 of 3 done*).
+4. Read the **Final answer** panel. Each model's own answer is in the tabs below it (or **Show side by side**). Open **Review discussion** to see who said what. Claude's text (and that of local LM Studio / Ollama models) appears word by word as it is written and is formatted when complete; Codex and Hermes do not report partial text, so their answers appear when finished. The progress line shows each review round (for example *Review round 1 of 2: 2 of 3 done*).
 5. **Copy ▾** on any panel copies as plain text or Markdown. **Copy complete discussion** copies everything. Ordinary selection with Ctrl+C works too.
 6. **Stop** cancels a question. **Retry <model>** re-asks a model that failed. **Regenerate** asks the same question again.
 7. Voice: 🔊 mutes/unmutes, ⏹ stops speaking, ↻ replays the last final answer. Only final answers are spoken automatically; use **Read aloud** on a model's answer to hear it.
@@ -36,11 +36,11 @@ Every link is a **model suggestion that nobody has checked**. Links are marked �
 
 Update checks (installed app only, can be turned off) contact github.com for the release list and the installer; nothing about your questions, answers or settings is sent.
 
-When a model is on it receives: your question, your saved instructions, the earlier questions and final answers from the same conversation that you chose to send (three by default), and — in Review together — the other models' answers and reviews. Claude goes to Anthropic, Codex to OpenAI, Gemini to Google (each through the sign-in already on this PC), local servers stay on this computer. No API keys are used or stored; answers count against your existing plans.
+When a model is on it receives: your question, your saved instructions, the earlier questions and final answers from the same conversation that you chose to send (three by default), and — in Review together — the other models' answers and reviews. Claude goes to Anthropic, Codex to OpenAI, Hermes to the provider set up in Hermes (each through the sign-in already on this PC), local servers stay on this computer. No API keys are used or stored; answers count against your existing plans.
 
 ## Safety
 
-- Models answer **text only**: Claude runs with tools, MCP servers and plugins disabled; Codex runs read-only with no shell, web search, sub-agents or user MCP config; Gemini runs in plan mode in a sandbox without auto-approval. Each runs in an empty working folder.
+- Models answer **text only**: Claude runs with tools, MCP servers and plugins disabled; Codex runs read-only with no shell, web search, sub-agents or user MCP config. Each runs in an empty working folder.
 - Model processes get an environment with secrets removed and are marked as children, so they cannot start this app or the jarvis-agent-bridge again (no delegation loops).
 - Review is bounded: one answer stage, at most two review rounds, one final stage, each call with a time limit.
 - Answers are rendered as inert Markdown: embedded HTML and scripts appear as text, images are not loaded, only `http`, `https` and `mailto` links are clickable, and they open in your default browser. The window cannot navigate away.
@@ -57,10 +57,14 @@ npm test             # unit tests
 npm run test:coverage  # unit tests with a coverage table for src/core
 npm run test:e2e     # real Electron window with stand-in models
 npm run check        # lint + typecheck + unit + e2e
-npm run test:live    # real Claude + Codex (uses a little quota); add "-- gemini" for Gemini
+npm run test:live    # real Claude + Codex (uses a little quota)
 npm run dist:win     # installer + portable exe in release\
 node tests/smoke/packaged-smoke.mjs   # packaged app + real Claude/Codex, throwaway data folder
 ```
+
+## Verified on 2026-11-20 (0.3.1)
+
+- Gemini (Antigravity) removed. A Gemini switch saved by an older version is dropped when settings load. Lint, typecheck, 30 unit tests and 12 end-to-end tests pass.
 
 ## Verified on 2026-11-19 (0.3.0 additions)
 
@@ -94,10 +98,9 @@ Each CLI is looked for in this order: the location you chose in Settings, its us
 
 - **JARVIS avatar speech was not played live in testing.** The route is the one the bridge verified earlier, and failure handling was tested, but speaking through the avatar needs a live avatar conversation (Command → Avatar) and uses Jarvis Cloud avatar minutes. Jarvis accepting text does not prove sound played, and **Stop speaking** cannot interrupt the avatar once it has the text.
 - **Hermes** is installed but not signed in (`hermes model`), so its adapter is untested and off by default. Its `--safe-mode` disables plugins and MCP, but Hermes has no verified "no tools" switch.
-- **Gemini (Antigravity)** has no switch that removes all tools; it runs in plan mode, sandboxed, without auto-approval, in an empty folder. It is off by default.
 - **Ollama** is not installed and **LM Studio**'s server is not running, so local models show as unavailable; the adapter (OpenAI-compatible HTTP) was unit-checked, not run against a real server.
 - Links are never verified by the models. **Check link** confirms only that a page responds.
-- Only Claude and local servers stream. Codex (`--json`) reports only completed messages and Gemini (`agy --output-format stream-json`) reports only completed steps, so neither can show partial text.
+- Only Claude and local servers stream. Codex (`--json`) reports only completed messages and Hermes prints its answer when finished, so neither can show partial text.
 - Streaming for LM Studio / Ollama was tested against a simulated server only.
 - The installer is **not code-signed yet**, so SmartScreen will warn (also for each update, since electron-updater cannot check a publisher signature on an unsigned build). Signing is wired up for Microsoft Artifact Signing or a certificate but needs an account; see [docs/code-signing.md](docs/code-signing.md). Installing was not run on this PC, to avoid adding shortcuts that might clash with the other "ron-assistant" build in progress.
 - Type checking is deliberately lenient (no strict null checks); it catches wrong option names and API shapes, not every possible mistake.

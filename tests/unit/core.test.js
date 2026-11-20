@@ -21,11 +21,8 @@ test('answering sessions are text-only and cannot reach MCP tools or the shell',
   const codex = spawnSpec('codex').args;
   for (const flag of ['--ignore-user-config', '--ephemeral', 'features.shell_tool=false', 'agents.enabled=false', 'web_search="disabled"']) assert.ok(codex.includes(flag), flag);
   assert.equal(codex[codex.indexOf('--sandbox') + 1], 'read-only');
-  const gemini = spawnSpec('gemini').args;
-  assert.ok(gemini.includes('--sandbox') && gemini.includes('plan'));
-  assert.ok(!gemini.includes('--dangerously-skip-permissions'));
   // Prompts go on stdin, never into argv.
-  for (const id of ['claude', 'codex', 'gemini', 'hermes']) assert.ok(!spawnSpec(id).args.some((a) => /QUESTION/.test(a)));
+  for (const id of ['claude', 'codex', 'hermes']) assert.ok(!spawnSpec(id).args.some((a) => /QUESTION/.test(a)));
 });
 
 test('secrets are not inherited by model processes and children are marked against recursion', () => {
@@ -38,8 +35,6 @@ test('CLI output parsing never turns a failure into an answer', () => {
   assert.equal(getProvider('claude').parse('{"is_error":false,"result":" Hi "}'), 'Hi');
   assert.throws(() => getProvider('codex').parse('{"type":"turn.failed","error":{"message":"rate limit"}}'));
   assert.equal(getProvider('codex').parse('{"type":"item.completed","item":{"type":"agent_message","text":"OK"}}\n{"type":"turn.completed"}'), 'OK');
-  assert.equal(getProvider('gemini').parse('warning: x\n{"status":"SUCCESS","response":"AGY-OK\\n"}'), 'AGY-OK');
-  assert.throws(() => getProvider('gemini').parse('{"status":"TIMEOUT","response":""}'));
   assert.throws(() => getProvider('hermes').parse('No access token found for Nous Portal login. Run `hermes model` to re-authenticate.'), /not signed in/);
   assert.equal(classifyFailure('Error 429: Too Many Requests'), 'rate-limited');
   assert.equal(classifyFailure('You are not logged in'), 'signin');
@@ -80,7 +75,7 @@ test('review mode: independent answers, one bounded review each, one final answe
 test('two review rounds is the hard maximum', async () => {
   const { ask, calls } = fakeAsk();
   const o = createOrchestrator({ ask });
-  await o.start({ question: 'Q', mode: 'review', models: ['claude', 'codex', 'gemini'], settings: { ...settings, reviewRounds: 99 } });
+  await o.start({ question: 'Q', mode: 'review', models: ['claude', 'codex', 'hermes'], settings: { ...settings, reviewRounds: 99 } });
   assert.equal(calls.filter((c) => /REVIEW ROUND/.test(c.prompt)).length, 6);
   assert.equal(calls.length, 3 + 6 + 1);
 });
@@ -161,13 +156,14 @@ test('review responses are split into review and revised answer', () => {
 test('settings, instructions and history persist separately; clearing history keeps instructions', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ra-store-'));
   const s1 = createStore(dir);
-  s1.saveSettings({ fontSize: 22, theme: 'dark', enabled: { gemini: true } });
+  s1.saveSettings({ fontSize: 22, theme: 'dark', enabled: { hermes: true, gemini: true } });
   s1.saveInstructions('Lead with the answer.');
   const id = '11111111-2222-3333-4444-555555555555';
   s1.saveRun({ id: 'r1', conversationId: id, question: 'Hello?', createdAt: 'now', context: [{ secret: true }], answers: {}, final: null });
   const s2 = createStore(dir); // a fresh process reading the same folder
   assert.equal(s2.getSettings().fontSize, 22);
-  assert.equal(s2.getSettings().enabled.gemini, true);
+  assert.equal(s2.getSettings().enabled.hermes, true);
+  assert.equal('gemini' in s2.getSettings().enabled, false); // a removed model's old switch is dropped
   assert.equal(s2.getSettings().enabled.claude, true);
   assert.equal(s2.getInstructions().text, 'Lead with the answer.');
   assert.equal(s2.listConversations()[0].title, 'Hello?');

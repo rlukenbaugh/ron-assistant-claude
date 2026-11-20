@@ -169,7 +169,7 @@ function registerIpc() {
     return s;
   });
   ipcMain.handle('instructions:save', (_e, text) => store.saveInstructions(text));
-  ipcMain.handle('connections:check', async () => (fake ? Object.fromEntries(PROVIDERS.map((p) => [p.id, ['claude', 'codex', 'gemini'].includes(p.id) ? { state: 'ready', detail: 'Test double' } : { state: 'unavailable', detail: 'Not installed on this computer.' }])) : runner.checkAll()));
+  ipcMain.handle('connections:check', async () => (fake ? Object.fromEntries(PROVIDERS.map((p) => [p.id, ['claude', 'codex', 'hermes'].includes(p.id) ? { state: 'ready', detail: 'Test double' } : { state: 'unavailable', detail: 'Not installed on this computer.' }])) : runner.checkAll()));
   ipcMain.handle('connections:choosePath', async (_e, id) => {
     const p = getProvider(id);
     if (p.kind !== 'cli') throw new Error(`${p.name} is not a program on this computer.`);

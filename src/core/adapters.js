@@ -1,7 +1,7 @@
 'use strict';
 // Model adapters: how each locally signed-in agent CLI (or local model server) is asked a
 // text-only question. Command lines were checked against the installed versions on
-// 2026-11-18 (Claude Code 2.1.322, Codex CLI 0.170.0, Antigravity agy 1.5.11, Hermes 0.22.7).
+// 2026-11-18 (Claude Code 2.1.322, Codex CLI 0.170.0, Hermes 0.22.7).
 // Prompts always travel on stdin, never through a shell, so question text cannot become a command.
 const fs = require('node:fs');
 const os = require('node:os');
@@ -59,22 +59,6 @@ const PROVIDERS = [
       const answers = events.filter((e) => e.type === 'item.completed' && e.item?.type === 'agent_message').map((e) => e.item.text);
       if (!answers.length || !events.some((e) => e.type === 'turn.completed')) throw new AdapterError('failed', 'Codex returned no completed answer.');
       return String(answers.at(-1)).trim();
-    },
-  },
-  {
-    id: 'gemini', name: 'Gemini', vendor: 'Google · Antigravity (agy) sign-in', kind: 'cli', defaultEnabled: false,
-    destination: 'Google (through your Antigravity sign-in)',
-    defaultPath: () => path.join(localAppData(), 'agy', 'bin', 'agy.exe'), pathNames: ['agy.exe'], testedVersion: '1.5.11',
-    // Plan mode + terminal sandbox, and no auto-approval: tool requests are not granted.
-    args: ({ model, timeoutSec }) => ['--mode', 'plan', '--sandbox', '--print-timeout', `${Math.max(30, timeoutSec - 10)}s`,
-      '--output-format', 'json', ...(model ? ['--model', model] : [])],
-    statusArgs: ['models'],
-    parseStatus: (out) => (/gemini/i.test(out) ? { ok: true, detail: 'Signed in (models listed)' } : { ok: false, detail: 'Antigravity did not list models. Open agy and sign in.' }),
-    parse: (stdout) => {
-      const start = stdout.indexOf('{');
-      const data = JSON.parse(stdout.slice(start));
-      if (data.status !== 'SUCCESS' || !String(data.response || '').trim()) throw new AdapterError('failed', `Gemini ended with status ${data.status || 'unknown'}.`);
-      return String(data.response).trim();
     },
   },
   {
@@ -173,11 +157,11 @@ function locate(id, source = process.env) {
 }
 
 /** Concrete spawn spec for a CLI provider. */
-/** @param {string} id @param {{ model?: string, timeoutSec?: number, nodePath?: string }} [opts] */
-function spawnSpec(id, { model = '', timeoutSec = 180, nodePath } = {}) {
+/** @param {string} id @param {{ model?: string, nodePath?: string }} [opts] */
+function spawnSpec(id, { model = '', nodePath } = {}) {
   const p = getProvider(id);
   if (p.kind !== 'cli') throw new AdapterError('failed', `${p.name} is not a command-line agent.`);
-  const args = p.args({ model, timeoutSec });
+  const args = p.args({ model });
   const file = locate(id) || p.defaultPath();
   if (p.runsOnNode) return { command: nodePath || resolveNode(), args: [file, ...args] };
   return { command: file, args };

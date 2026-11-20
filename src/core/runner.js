@@ -25,7 +25,7 @@ function runCli(id, prompt, { signal, timeoutSec = 180, model = '', cwd, onText 
   const provider = getProvider(id);
   checkedPrompt(prompt);
   if (!installedPath(id)) return Promise.reject(new AdapterError('missing', `${provider.name} is not installed on this computer.`));
-  const spec = spawnSpec(id, { model, timeoutSec });
+  const spec = spawnSpec(id, { model });
   if (cwd) fs.mkdirSync(cwd, { recursive: true });
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new AdapterError('cancelled', 'Stopped.'));
