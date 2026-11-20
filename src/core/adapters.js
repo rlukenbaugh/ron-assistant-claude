@@ -77,7 +77,8 @@ const PROVIDERS = [
     },
     statusArgs: null, // Hermes has no quota-free sign-in check; "Test" sends a tiny question.
     parse: (stdout) => {
-      const text = stdout.replace(/\n?(session[_ ]id|Session:).*$/is, '').trim();
+      // Hermes prints a "Session: …" line (before the answer in 0.22+, after it in older builds); drop only that line.
+      const text = String(stdout || '').split(/\r?\n/).filter((l) => !/^\s*(session[_ ]id|session)\s*:/i.test(l)).join('\n').trim();
       if (!text) throw new AdapterError('failed', 'Hermes returned no answer.');
       if (/pass --model/i.test(text)) throw new AdapterError('failed', 'Hermes needs a model. Type its provider and model under Settings → Models & connections → Hermes, or choose one with: hermes model');
       if (/no access token|re-authenticate|hermes model/i.test(text)) throw new AdapterError('signin', 'Hermes is not signed in. Run: hermes model');

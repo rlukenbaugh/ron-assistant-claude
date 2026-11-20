@@ -337,4 +337,6 @@ test('Hermes gets its saved provider and model explicitly, since --safe-mode ign
     assert.deepEqual(hermesSavedModel(), { provider: 'openrouter', model: 'x/y' });
   } finally { if (old === undefined) delete process.env.HERMES_HOME; else process.env.HERMES_HOME = old; }
   assert.throws(() => getProvider('hermes').parse('Error: no model configured; pass --model explicitly'), /needs a model/);
+  assert.equal(getProvider('hermes').parse('Session: local-214dbabbd\r\nCONNECTED\r\n'), 'CONNECTED');
+  assert.equal(getProvider('hermes').parse('Line one\nLine two\n\nsession_id: abc\n'), 'Line one\nLine two');
 });
